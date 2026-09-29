@@ -1,0 +1,35 @@
+name: Embed Cadu PT-BR voice
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  cadu:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Cadu model
+        run: |
+          set -e
+          mkdir -p models
+          curl -L --fail --retry 3 -o models/pt_BR-cadu-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/cadu/medium/pt_BR-cadu-medium.onnx
+          curl -L --fail --retry 3 -o models/pt_BR-cadu-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/pt/pt_BR/cadu/medium/pt_BR-cadu-medium.onnx.json
+
+      - name: Commit model
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add models/pt_BR-cadu-medium.onnx models/pt_BR-cadu-medium.onnx.json
+          if git diff --cached --quiet; then
+            echo "Cadu model already present."
+          else
+            git commit -m "Adicionar modelo de voz Cadu PT-BR"
+            git push
+          fi
