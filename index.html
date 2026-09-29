@@ -331,7 +331,8 @@ async function getKokoro(){
     toast('Carregando motor de IA e modelo de voz. A primeira vez pode demorar alguns minutos…');
     const {KokoroTTS}=await import('https://esm.sh/kokoro-js@1.2.1?bundle');
     const engine=await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{dtype:'q8',device:'wasm'});
-    syncKokoroVoices(engine);\n    return engine;
+    syncKokoroVoices(engine);
+    return engine;
   })();
   try{kokoroInstance=await kokoroLoading;return kokoroInstance}catch(e){kokoroLoading=null;throw e}
 }
