@@ -74,7 +74,7 @@
       <div class="field"><label>Velocidade <b id="speedV">1,00×</b></label><input id="speed" type="range" min=".5" max="2.5" step=".05" value="1"></div>
       <div class="field"><label>Tipo de voz</label><select id="voiceEngine"><option value="system">Vozes do dispositivo (iOS / PC)</option><option value="kokoro">IA gratuita — Kokoro (processamento local)</option></select></div>
       <div class="field" id="systemVoiceField"><label>Voz do dispositivo</label><select id="voice"></select></div>
-      <div class="field" id="aiVoiceField" hidden><label>Voz de IA — português brasileiro</label><select id="aiVoice"><option value="pf_dora">Dora — feminina</option><option value="pm_alex">Alex — masculina</option><option value="pm_santa">Santa — masculina</option></select><div class="notice">Gratuita, sem chave de API. Na primeira utilização, baixa um modelo grande. Em iPhones antigos pode ser lenta ou não funcionar; use as vozes do dispositivo nesses casos.</div></div>
+      <div class="field" id="aiVoiceField" hidden><label>Voz de IA — português brasileiro</label><select id="aiVoice"><option value="pf_dora">Dora — feminina</option><option value="pm_alex">Alex — masculina</option><option value="pm_santa">Santa — masculina</option></select><div id="aiVoiceNotice" class="notice">Gratuita, sem chave de API. Na primeira utilização, baixa um modelo grande. Em iPhones antigos pode ser lenta ou não funcionar; use as vozes do dispositivo nesses casos.</div></div>
       <div class="row">
         <div class="field"><label>Tamanho <b id="fontV">20px</b></label><input id="font" type="range" min="16" max="30" value="20"></div>
         <div class="field"><label>Espaço <b id="lineV">1,55</b></label><input id="line" type="range" min="1.25" max="2" step=".05" value="1.55"></div>
@@ -291,12 +291,46 @@ function pageSmartText(pageIndex,mode='smart'){
 
 function chunks(text,max=700){const words=text.split(/\s+/);const out=[];let cur='';for(const w of words){if((cur+' '+w).trim().length>max&&cur){out.push(cur);cur=w}else cur=(cur+' '+w).trim()}if(cur)out.push(cur);return out}
 let kokoroInstance=null,kokoroLoading=null;
+function getKokoroVoiceIds(engine){
+  try{
+    const voices=engine?.voices;
+    if(Array.isArray(voices)) return voices.map(v=>typeof v==='string'?v:(v?.id||v?.name)).filter(Boolean);
+    if(voices&&typeof voices==='object') return Object.keys(voices);
+  }catch{}
+  return [];
+}
+function syncKokoroVoices(engine){
+  const ids=getKokoroVoiceIds(engine);
+  if(!ids.length)return;
+  const wanted=[
+    ['pf_dora','Dora — feminina'],
+    ['pm_alex','Alex — masculina'],
+    ['pm_santa','Santa — masculina']
+  ];
+  const available=wanted.filter(([id])=>ids.includes(id));
+  const current=els.aiVoice.value;
+  els.aiVoice.innerHTML='';
+  if(available.length){
+    for(const [id,label] of available){const o=document.createElement('option');o.value=id;o.textContent=label;els.aiVoice.appendChild(o)}
+    if(available.some(([id])=>id===current))els.aiVoice.value=current;
+    else els.aiVoice.value=available[0][0];
+    els.aiVoice.disabled=false;
+    const n=els.aiVoice.parentElement?.querySelector('#aiVoiceNotice');
+    if(n)n.textContent='Kokoro local. Vozes em português disponíveis neste navegador: '+available.map(([,label])=>label.replace(' — masculina','').replace(' — feminina','')).join(', ')+'.';
+  }else{
+    const o=document.createElement('option');o.value='';o.textContent='Português não disponível no motor carregado';o.selected=true;els.aiVoice.appendChild(o);
+    els.aiVoice.disabled=true;
+    const n=els.aiVoice.parentElement?.querySelector('#aiVoiceNotice');
+    if(n)n.textContent='Esta versão do motor Kokoro carregada no navegador não disponibilizou vozes em português. A leitura será direcionada automaticamente para a voz portuguesa do dispositivo para evitar o erro de voz inexistente.';
+  }
+}
+
 async function getKokoro(){
   if(kokoroInstance)return kokoroInstance;
   if(!kokoroLoading)kokoroLoading=(async()=>{
     toast('Carregando motor de IA e modelo de voz. A primeira vez pode demorar alguns minutos…');
     const {KokoroTTS}=await import('https://esm.sh/kokoro-js@1.2.1?bundle');
-    return await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{dtype:'q8',device:'wasm'});
+    const engine=await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{dtype:'q8',device:'wasm'});\n    syncKokoroVoices(engine);\n    return engine;
   })();
   try{kokoroInstance=await kokoroLoading;return kokoroInstance}catch(e){kokoroLoading=null;throw e}
 }
@@ -313,7 +347,7 @@ async function speakAI(text){
   for(let i=0;i<parts.length&&run===state.aiRun;i++){
     try{
       toast('IA: gerando trecho '+(i+1)+' de '+parts.length+'…');
-      const result=await engine.generate(parts[i],{voice:els.aiVoice.value,speed:+els.speed.value});
+      const result=await engine.generate(parts[i],{voice:selectedVoice,speed:+els.speed.value});
       if(run!==state.aiRun)return;
       const blob=result.toBlob();
       const url=URL.createObjectURL(blob);
