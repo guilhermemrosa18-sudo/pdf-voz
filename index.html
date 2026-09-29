@@ -298,14 +298,13 @@ async function getTransformers(){
     transformersLoading=(async()=>{
       toast('Carregando a voz IA. Na primeira vez, o modelo pode levar alguns instantes…');
       const {pipeline}=await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm');
-      let device=(navigator.gpu?'webgpu':'wasm');
-      try{
-        transformersTTS=await pipeline('text-to-speech','Xenova/mms-tts-por',{dtype:'q8',device});
-      }catch(e){
-        if(device==='webgpu'){
-          transformersTTS=await pipeline('text-to-speech','Xenova/mms-tts-por',{dtype:'q8',device:'wasm'});
-        }else throw e;
-      }
+      // MMS-TTS usa operações que podem falhar no WebGPU neste modelo
+      // (ex.: GatherND com tipos não suportados). Para priorizar compatibilidade,
+      // executamos esta voz em WASM/CPU.
+      transformersTTS=await pipeline('text-to-speech','Xenova/mms-tts-por',{
+        dtype:'q8',
+        device:'wasm'
+      });
       return transformersTTS;
     })();
   }
