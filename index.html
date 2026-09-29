@@ -67,6 +67,7 @@
         <div class="outline"><small id="outlineHint">Marcadores do PDF</small><select id="outline"><option value="">Nenhum marcador disponível</option></select></div>
       </div>
 
+      <div class="field"><label>Modo de leitura</label><select id="readMode"><option value="smart" selected>🧠 Inteligente</option><option value="visual">👁 Ordem visual</option><option value="columns">↕️ Por colunas</option></select></div>
       <div class="field"><label>Velocidade <b id="speedV">1,00×</b></label><input id="speed" type="range" min=".5" max="2.5" step=".05" value="1"></div>
       <div class="field"><label>Voz</label><select id="voice"></select></div>
       <div class="row">
@@ -88,11 +89,11 @@ home:$('home'),reader:$('reader'),choose:$('choose'),file:$('file'),theme:$('the
 name:$('name'),meta:$('meta'),count:$('count'),page:$('page'),prev:$('prev'),next:$('next'),
 stage:$('stage'),loading:$('loading'),canvas:$('canvas'),text:$('text'),pdfTab:$('pdfTab'),textTab:$('textTab'),
 now:$('now'),pct:$('pct'),sent:$('sent'),fill:$('fill'),play:$('play'),rewind:$('rewind'),forward:$('forward'),
-startPage:$('startPage'),useCurrent:$('useCurrent'),jumpStart:$('jumpStart'),outline:$('outline'),outlineHint:$('outlineHint'),
+startPage:$('startPage'),useCurrent:$('useCurrent'),jumpStart:$('jumpStart'),outline:$('outline'),outlineHint:$('outlineHint'),readMode:$('readMode'),
 speed:$('speed'),speedV:$('speedV'),voice:$('voice'),font:$('font'),fontV:$('fontV'),line:$('line'),lineV:$('lineV'),
 startRead:$('startRead'),stop:$('stop'),notice:$('notice')
 };
-let state={pdf:null,pages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,outline:[]};
+let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,outline:[],pageBlocks:[]};
 
 function toast(msg){els.notice.textContent=msg}
 function save(){if(state.pdf)localStorage.setItem('pdfvoz-progress',JSON.stringify({page:state.page,readStartPage:state.readStartPage,file:els.name.textContent}))}
@@ -155,11 +156,19 @@ async function renderPage(n){
   }
 }
 async function extractPages(){
-  state.pages=[];const total=state.pdf.numPages;
+  state.pages=[];state.layoutPages=[];const total=state.pdf.numPages;
   for(let i=1;i<=total;i++){
     const p=await state.pdf.getPage(i);const t=await p.getTextContent();
-    state.pages.push(t.items.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim());
-    if(i%10===0||i===total)toast('Lendo texto do PDF… página '+i+' de '+total);
+    const items=(t.items||[]).filter(x=>(x.str||'').trim()).map(x=>({
+      str:(x.str||'').trim(),
+      x:Number(x.transform?.[4]||0),
+      y:Number(x.transform?.[5]||0),
+      w:Number(x.width||0),
+      h:Number(x.height||Math.abs(x.transform?.[3]||0)||10)
+    })).filter(x=>x.str);
+    state.layoutPages.push(items);
+    state.pages.push(items.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim());
+    if(i%10===0||i===total)toast('Lendo estrutura do PDF… página '+i+' de '+total);
   }
 }
 async function openPDF(file){
@@ -174,11 +183,113 @@ async function openPDF(file){
   const totalChars=state.pages.join(' ').trim().length;
   toast(totalChars?('Texto extraído: '+totalChars.toLocaleString('pt-BR')+' caracteres. Escolha abaixo onde deseja começar.'):'Este PDF não possui texto extraível. Se for escaneado, será necessário OCR.');
 }
+function normalizeSpaces(s){return (s||'').replace(/\\s+/g,' ').trim()}
+
+function makeLines(items){
+  const sorted=items.slice().sort((a,b)=>b.y-a.y||a.x-b.x);
+  const lines=[];
+  for(const item of sorted){
+    let line=lines.find(l=>Math.abs(l.y-item.y)<=Math.max(3,item.h*.45));
+    if(!line){line={y:item.y,items:[]};lines.push(line)}
+    line.items.push(item);
+  }
+  return lines.map(l=>{
+    l.items.sort((a,b)=>a.x-b.x);
+    l.minX=Math.min(...l.items.map(x=>x.x)); l.maxX=Math.max(...l.items.map(x=>x.x+x.w));
+    l.text=normalizeSpaces(l.items.map(x=>x.str).join(' '));
+    return l;
+  }).filter(l=>l.text);
+}
+
+function kmeansXs(values,k){
+  if(values.length<k)return null;
+  let centers=[];
+  const min=Math.min(...values),max=Math.max(...values);
+  for(let i=0;i<k;i++)centers.push(min+(max-min)*((i+.5)/k));
+  for(let iter=0;iter<15;iter++){
+    const groups=Array.from({length:k},()=>[]);
+    for(const v of values){let bi=0,bd=Math.abs(v-centers[0]);for(let j=1;j<k;j++){const d=Math.abs(v-centers[j]);if(d<bd){bd=d;bi=j}}groups[bi].push(v)}
+    const next=groups.map((g,i)=>g.length?g.reduce((a,b)=>a+b,0)/g.length:centers[i]);
+    if(next.every((c,i)=>Math.abs(c-centers[i])<.5))break; centers=next;
+  }
+  return centers.map((c,i)=>({c,i})).sort((a,b)=>a.c-b.c);
+}
+
+function detectColumns(lines){
+  const usable=lines.filter(l=>l.text.length>1);
+  if(usable.length<6)return null;
+  const width=Math.max(...usable.map(l=>l.maxX))-Math.min(...usable.map(l=>l.minX));
+  if(width<100)return null;
+  let best=null;
+  for(const k of [3,2]){
+    if(usable.length<k*3)continue;
+    const cs=kmeansXs(usable.map(l=>l.minX),k); if(!cs)continue;
+    const assignments=usable.map(l=>{let bi=0,bd=Math.abs(l.minX-cs[0].c);for(let j=1;j<cs.length;j++){const d=Math.abs(l.minX-cs[j].c);if(d<bd){bd=d;bi=j}}return bi});
+    const counts=Array.from({length:k},(_,i)=>assignments.filter(a=>a===i).length);
+    const support=Math.min(...counts)/usable.length;
+    const gaps=cs.slice(1).map((c,i)=>c.c-cs[i].c);
+    const separated=gaps.every(g=>g>width*.18);
+    if(support>=.15&&separated){best={k,centers:cs,usable,assignments,width};break}
+  }
+  return best;
+}
+
+function pageSmartText(pageIndex,mode='smart'){
+  const items=state.layoutPages[pageIndex]||[];
+  if(!items.length)return '';
+  const lines=makeLines(items);
+  if(mode==='visual'){
+    return lines.map(l=>l.text).join('\n');
+  }
+  const detected=detectColumns(lines);
+  if(!detected){
+    return lines.map(l=>l.text).join('\n');
+  }
+  const {k,centers}=detected;
+  const lineCols=lines.map(l=>{
+    let bi=0,bd=Math.abs(l.minX-centers[0].c);
+    for(let j=1;j<centers.length;j++){const d=Math.abs(l.minX-centers[j].c);if(d<bd){bd=d;bi=j}}
+    return {...l,col:bi};
+  });
+
+  // Tabelas comparativas: quando existem 3 colunas estáveis, presume-se
+  // que a primeira contém rótulos e as duas seguintes são as organizações.
+  if(mode==='smart'&&k===3){
+    const multi=lineCols.filter(l=>lineCols.some(r=>r!==l&&Math.abs(r.y-l.y)<=4&&r.col!==l.col));
+    if(multi.length>=4){
+      const rows=[];
+      for(const l of lineCols){
+        let row=rows.find(r=>Math.abs(r.y-l.y)<=4);
+        if(!row){row={y:l.y,cells:['','','']};rows.push(row)}
+        row.cells[l.col]=(row.cells[l.col]+' '+l.text).trim();
+      }
+      rows.sort((a,b)=>b.y-a.y);
+      const header=rows[0]?.cells||[];
+      const data=rows.slice(1).filter(r=>r.cells.some(Boolean));
+      const aName=header[1]||'Primeira organização';
+      const bName=header[2]||'Segunda organização';
+      const left=data.map(r=>r.cells[0]&&r.cells[1] ? r.cells[0]+': '+r.cells[1] : r.cells[1]).filter(Boolean);
+      const right=data.map(r=>r.cells[0]&&r.cells[2] ? r.cells[0]+': '+r.cells[2] : r.cells[2]).filter(Boolean);
+      if(left.length>=2&&right.length>=2){
+        return [aName].concat(left).concat([bName]).concat(right).join('\n');
+      }
+    }
+  }
+
+  // Duas colunas / caixas laterais: leia uma coluna inteira e depois a outra.
+  const grouped=[];
+  for(let c=0;c<k;c++){
+    grouped.push(...lineCols.filter(l=>l.col===c).sort((a,b)=>b.y-a.y).map(l=>l.text));
+  }
+  return grouped.join('\n');
+}
+
 function chunks(text,max=700){const words=text.split(/\s+/);const out=[];let cur='';for(const w of words){if((cur+' '+w).trim().length>max&&cur){out.push(cur);cur=w}else cur=(cur+' '+w).trim()}if(cur)out.push(cur);return out}
 function speakFromPage(){
   const start=Math.max(1,Math.min(+els.startPage.value||state.page,state.pdf?.numPages||1));state.readStartPage=start;
   if(!state.pdf){toast('Abra um PDF primeiro.');return}
-  const all=state.pages.slice(start-1).filter(Boolean).join('\n');
+  const mode=els.readMode.value||'smart';
+  const all=Array.from({length:state.pdf.numPages-start+1},(_,i)=>pageSmartText(start-1+i,mode)).filter(Boolean).join('\n\n');
   if(!all){toast('Não há texto extraível a partir dessa página.');return}
   speechSynthesis.cancel();state.speaking=true;state.paused=false;els.play.textContent='⏸ Pausar';
   const parts=chunks(all);let i=0;
@@ -198,6 +309,8 @@ els.stop.onclick=()=>{speechSynthesis.cancel();state.speaking=false;state.paused
 els.startRead.onclick=()=>speakFromPage();
 els.useCurrent.onclick=()=>{state.readStartPage=state.page;els.startPage.value=state.page;save();toast('A leitura vai começar na página '+state.page+'.')};
 els.jumpStart.onclick=()=>{const n=Math.max(1,Math.min(+els.startPage.value||1,state.pdf?.numPages||1));state.readStartPage=n;renderPage(n);toast('Ponto inicial definido na página '+n+'.')};
+els.readMode.onchange=()=>{localStorage.setItem('pdfvoz-readMode',els.readMode.value)};
+const savedMode=localStorage.getItem('pdfvoz-readMode');if(savedMode&&['smart','visual','columns'].includes(savedMode))els.readMode.value=savedMode;
 els.outline.onchange=async()=>{const idx=+els.outline.value;if(!Number.isFinite(idx)||!state.outline[idx])return;const p=await destinationToPage(state.outline[idx].dest);if(p){state.readStartPage=p;els.startPage.value=p;await renderPage(p);toast('Ponto inicial: página '+p+'.') }else toast('Esse marcador não informa uma página que o navegador consiga localizar.')};
 els.rewind.onclick=()=>renderPage(state.page-1);els.forward.onclick=()=>renderPage(state.page+1);
 els.speed.oninput=()=>els.speedV.textContent=Number(els.speed.value).toFixed(2).replace('.',',')+'×';
@@ -206,6 +319,7 @@ els.line.oninput=()=>{els.lineV.textContent=Number(els.line.value).toFixed(2).re
 els.theme.onclick=()=>{document.documentElement.classList.toggle('light');els.theme.textContent=document.documentElement.classList.contains('light')?'☀':'☾';localStorage.setItem('pdfvoz-theme',document.documentElement.classList.contains('light')?'light':'dark')};
 if(localStorage.getItem('pdfvoz-theme')==='light'){document.documentElement.classList.add('light');els.theme.textContent='☀'}
 let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},180)});
+window.addEventListener('orientationchange',()=>setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},350));
 window.addEventListener('beforeunload',save);
 </script>
 </body>
