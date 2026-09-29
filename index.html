@@ -74,7 +74,7 @@
       <div class="field"><label>Velocidade <b id="speedV">1,00×</b></label><input id="speed" type="range" min=".5" max="2.5" step=".05" value="1"></div>
       <div class="field"><label>Tipo de voz</label><select id="voiceEngine"><option value="system">Vozes do dispositivo (iOS / PC)</option><option value="piper" selected>IA — Cadu (Piper, PT-BR)</option></select></div>
       <div class="field" id="systemVoiceField"><label>Voz do dispositivo</label><select id="voice"></select></div>
-      <div class="field" id="aiVoiceField" hidden><label>Voz de IA — português brasileiro</label><select id="aiVoice"><option value="pf_dora">Dora — feminina</option><option value="pm_alex">Alex — masculina</option><option value="pm_santa">Santa — masculina</option></select><div id="aiVoiceNotice" class="notice">Gratuita, sem chave de API. Na primeira utilização, baixa um modelo grande. Em iPhones antigos pode ser lenta ou não funcionar; use as vozes do dispositivo nesses casos.</div></div>
+      <div class="field" id="aiVoiceField"><label>Voz de IA — português brasileiro</label><select id="aiVoice"><option value="pt_BR-cadu-medium" selected>Cadu — masculina</option><option value="pt_BR-faber-medium">Faber — masculina</option></select><div id="aiVoiceNotice" class="notice">Voz neural em português brasileiro, processada localmente no navegador. Na primeira utilização, o modelo é baixado e fica em cache no dispositivo.</div></div>
       <div class="row">
         <div class="field"><label>Tamanho <b id="fontV">20px</b></label><input id="font" type="range" min="16" max="30" value="20"></div>
         <div class="field"><label>Espaço <b id="lineV">1,55</b></label><input id="line" type="range" min="1.25" max="2" step=".05" value="1.55"></div>
@@ -291,20 +291,19 @@ function pageSmartText(pageIndex,mode='smart'){
 
 function chunks(text,max=700){const words=text.split(/\s+/);const out=[];let cur='';for(const w of words){if((cur+' '+w).trim().length>max&&cur){out.push(cur);cur=w}else cur=(cur+' '+w).trim()}if(cur)out.push(cur);return out}
 let piperModule=null,piperLoading=null,piperAudio=null,piperVoice='pt_BR-cadu-medium';
+
 async function getPiper(){
   if(piperModule)return piperModule;
-  if(!piperLoading){
-    piperLoading=(async()=>{
-      toast('Carregando a voz Cadu. Na primeira vez, o modelo pode levar alguns instantes para baixar…');
-      return await import('https://esm.sh/@jtsage/piper-tts-web@1.2.0');
-    })();
-  }
+  if(!piperLoading)piperLoading=(async()=>{
+    toast('Carregando a voz Cadu. Na primeira vez, o modelo pode levar alguns instantes para baixar…');
+    return await import('https://esm.sh/@jtsage/piper-tts-web@1.2.0');
+  })();
   try{piperModule=await piperLoading;return piperModule}catch(e){piperLoading=null;throw e}
 }
 function stopSpeech(){
   state.aiRun++;speechSynthesis.cancel();
   if(state.aiAudio){state.aiAudio.pause();state.aiAudio.onended=null;state.aiAudio.removeAttribute('src');state.aiAudio.load();state.aiAudio=null}
-  if(piperAudio){try{piperAudio.pause();piperAudio.removeAttribute('src');piperAudio.load()}catch{} piperAudio=null}
+  if(piperAudio){try{piperAudio.pause();piperAudio.removeAttribute('src');piperAudio.load()}catch{}piperAudio=null}
   state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';
 }
 async function speakAI(text){
@@ -319,8 +318,7 @@ async function speakAI(text){
       if(run!==state.aiRun)return;
       const url=URL.createObjectURL(wav);
       const audio=new Audio(url);
-      piperAudio=audio;
-      state.aiAudio=audio;
+      piperAudio=audio;state.aiAudio=audio;
       await new Promise((resolve,reject)=>{
         audio.onended=resolve;
         audio.onerror=()=>reject(new Error('Falha ao reproduzir áudio'));
@@ -338,3 +336,61 @@ async function speakAI(text){
     toast('Não foi possível carregar a voz de IA. '+(e?.message||'Use as vozes do dispositivo.'));
   }
 }
+function speakFromPage(){
+  const start=Math.max(1,Math.min(+els.startPage.value||state.page,state.pdf?.numPages||1));state.readStartPage=start;
+  if(!state.pdf){toast('Abra um PDF primeiro.');return}
+  const mode=els.readMode.value||'smart';
+  const all=Array.from({length:state.pdf.numPages-start+1},(_,i)=>pageSmartText(start-1+i,mode)).filter(Boolean).join('\n\n');
+  if(!all){toast('Não há texto extraível a partir dessa página.');return}
+  stopSpeech();state.speaking=true;state.paused=false;els.play.textContent='⏸ Pausar';
+  if(els.voiceEngine.value==='piper'){save();speakAI(all);return}
+  const parts=chunks(all);let i=0;
+  const nextChunk=()=>{if(!state.speaking)return;if(i>=parts.length){state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';toast('Leitura concluída.');return}
+    const u=new SpeechSynthesisUtterance(parts[i++]);const v=state.voices[+els.voice.value];if(v)u.voice=v;u.rate=+els.speed.value;u.lang=v?.lang||'pt-BR';
+    u.onend=nextChunk;u.onerror=()=>{state.speaking=false;els.play.textContent='▶ Ler';toast('Não foi possível continuar a leitura.')};state.utterance=u;speechSynthesis.speak(u);
+  };save();nextChunk();
+}
+els.choose.onclick=()=>els.file.click();
+els.zoomOut.onclick=()=>{state.zoom=Math.max(.5,Math.round((state.zoom-.25)*100)/100);renderPage(state.page)};
+els.zoomIn.onclick=()=>{state.zoom=Math.min(3,Math.round((state.zoom+.25)*100)/100);renderPage(state.page)};
+els.zoomReset.onclick=()=>{state.zoom=1;renderPage(state.page)};
+document.addEventListener('dragover',e=>{if(e.dataTransfer?.types?.includes('Files'))e.preventDefault()});
+document.addEventListener('drop',e=>{if(e.dataTransfer?.files?.length){e.preventDefault();const file=[...e.dataTransfer.files].find(f=>f.type==='application/pdf'||/\\.pdf$/i.test(f.name));if(file)openPDF(file).catch(err=>toast('Erro ao abrir PDF: '+err.message));else toast('Arraste um arquivo PDF.')}});
+document.addEventListener('keydown',e=>{
+  const tag=document.activeElement?.tagName;
+  if(!state.pdf||['INPUT','TEXTAREA','SELECT'].includes(tag)||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.key==='ArrowRight'){e.preventDefault();renderPage(state.page+1)}
+  else if(e.key==='ArrowLeft'){e.preventDefault();renderPage(state.page-1)}
+  else if(e.code==='Space'){e.preventDefault();els.play.click()}
+});
+els.file.onchange=()=>{const f=els.file.files?.[0];if(f)openPDF(f).catch(e=>{console.error(e);toast('Erro ao abrir PDF: '+(e?.message||e))})};
+els.back.onclick=()=>{stopSpeech();els.reader.classList.remove('show');els.home.style.display='block'};
+els.prev.onclick=()=>renderPage(state.page-1);els.next.onclick=()=>renderPage(state.page+1);els.page.onchange=()=>renderPage(+els.page.value||1);
+els.pdfTab.onclick=()=>{els.pdfTab.classList.add('active');els.textTab.classList.remove('active');els.stage.hidden=false;els.text.hidden=true;renderPage(state.page)};
+els.textTab.onclick=()=>{els.textTab.classList.add('active');els.pdfTab.classList.remove('active');els.stage.hidden=true;els.text.hidden=false};
+els.play.onclick=()=>{if(!state.pdf)return;if(!state.speaking){speakFromPage();return}
+  if(els.voiceEngine.value==='piper'){if(!state.aiAudio){toast('Aguarde a geração do trecho atual.');return}if(state.paused){state.aiAudio.play().catch(e=>toast(e.message));state.paused=false;els.play.textContent='⏸ Pausar'}else{state.aiAudio.pause();state.paused=true;els.play.textContent='▶ Continuar'}return}
+  if(speechSynthesis.paused){speechSynthesis.resume();state.paused=false;els.play.textContent='⏸ Pausar'}else{speechSynthesis.pause();state.paused=true;els.play.textContent='▶ Continuar'}
+};
+els.stop.onclick=()=>{stopSpeech();toast('Leitura parada.')};
+els.voiceEngine.onchange=()=>{stopSpeech();const ai=els.voiceEngine.value==='piper';els.aiVoiceField.hidden=!ai;els.systemVoiceField.hidden=ai;localStorage.setItem('pdfvoz-voiceEngine',els.voiceEngine.value)};
+const savedEngine=localStorage.getItem('pdfvoz-voiceEngine');if(savedEngine==='piper'||savedEngine==='kokoro'){els.voiceEngine.value='piper';els.voiceEngine.onchange()}else{els.voiceEngine.onchange()}
+els.startRead.onclick=()=>speakFromPage();
+els.useCurrent.onclick=()=>{state.readStartPage=state.page;els.startPage.value=state.page;save();toast('A leitura vai começar na página '+state.page+'.')};
+els.jumpStart.onclick=()=>{const n=Math.max(1,Math.min(+els.startPage.value||1,state.pdf?.numPages||1));state.readStartPage=n;renderPage(n);toast('Ponto inicial definido na página '+n+'.')};
+els.aiVoice.onchange=()=>{piperVoice=els.aiVoice.value;localStorage.setItem('pdfvoz-aiVoice',piperVoice)};const savedAiVoice=localStorage.getItem('pdfvoz-aiVoice');if(['pt_BR-cadu-medium','pt_BR-faber-medium'].includes(savedAiVoice)){els.aiVoice.value=savedAiVoice;piperVoice=savedAiVoice};
+els.readMode.onchange=()=>{localStorage.setItem('pdfvoz-readMode',els.readMode.value)};
+const savedMode=localStorage.getItem('pdfvoz-readMode');if(savedMode&&['smart','visual','columns'].includes(savedMode))els.readMode.value=savedMode;
+els.outline.onchange=async()=>{const idx=+els.outline.value;if(!Number.isFinite(idx)||!state.outline[idx])return;const p=await destinationToPage(state.outline[idx].dest);if(p){state.readStartPage=p;els.startPage.value=p;await renderPage(p);toast('Ponto inicial: página '+p+'.') }else toast('Esse marcador não informa uma página que o navegador consiga localizar.')};
+els.rewind.onclick=()=>renderPage(state.page-1);els.forward.onclick=()=>renderPage(state.page+1);
+els.speed.oninput=()=>els.speedV.textContent=Number(els.speed.value).toFixed(2).replace('.',',')+'×';
+els.font.oninput=()=>{els.fontV.textContent=els.font.value+'px';els.text.style.fontSize=els.font.value+'px'};
+els.line.oninput=()=>{els.lineV.textContent=Number(els.line.value).toFixed(2).replace('.',',');els.text.style.lineHeight=els.line.value};
+els.theme.onclick=()=>{document.documentElement.classList.toggle('light');els.theme.textContent=document.documentElement.classList.contains('light')?'☀':'☾';localStorage.setItem('pdfvoz-theme',document.documentElement.classList.contains('light')?'light':'dark')};
+if(localStorage.getItem('pdfvoz-theme')==='light'){document.documentElement.classList.add('light');els.theme.textContent='☀'}
+let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},180)});
+window.addEventListener('orientationchange',()=>setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},350));
+window.addEventListener('beforeunload',save);
+</script>
+</body>
+</html>
