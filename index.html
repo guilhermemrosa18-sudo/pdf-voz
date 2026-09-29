@@ -330,7 +330,8 @@ async function getKokoro(){
   if(!kokoroLoading)kokoroLoading=(async()=>{
     toast('Carregando motor de IA e modelo de voz. A primeira vez pode demorar alguns minutos…');
     const {KokoroTTS}=await import('https://esm.sh/kokoro-js@1.2.1?bundle');
-    const engine=await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{dtype:'q8',device:'wasm'});\n    syncKokoroVoices(engine);\n    return engine;
+    const engine=await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{dtype:'q8',device:'wasm'});
+    syncKokoroVoices(engine);\n    return engine;
   })();
   try{kokoroInstance=await kokoroLoading;return kokoroInstance}catch(e){kokoroLoading=null;throw e}
 }
@@ -343,6 +344,23 @@ async function speakAI(text){
   const run=++state.aiRun;let engine;
   try{engine=await getKokoro()}catch(e){if(run===state.aiRun){stopSpeech();toast('Não foi possível carregar a voz de IA neste navegador. Use as vozes do dispositivo. '+(e.message||''))}return}
   if(run!==state.aiRun)return;
+  const ids=getKokoroVoiceIds(engine);
+  let selectedVoice=els.aiVoice.value;
+  if(ids.length&&!ids.includes(selectedVoice)){
+    const ptVoice=['pm_alex','pm_santa','pf_dora'].find(v=>ids.includes(v));
+    if(ptVoice){
+      selectedVoice=ptVoice;
+      els.aiVoice.value=ptVoice;
+      localStorage.setItem('pdfvoz-aiVoice',ptVoice);
+    }else{
+      stopSpeech();
+      els.voiceEngine.value='system';
+      els.voiceEngine.onchange();
+      toast('O motor Kokoro não disponibilizou uma voz em português neste navegador. Usando a voz portuguesa do dispositivo.');
+      speakFromPage();
+      return;
+    }
+  }
   const parts=chunks(text,220);
   for(let i=0;i<parts.length&&run===state.aiRun;i++){
     try{
