@@ -290,6 +290,23 @@ function pageSmartText(pageIndex,mode='smart'){
 }
 
 function chunks(text,max=700){const words=text.split(/\s+/);const out=[];let cur='';for(const w of words){if((cur+' '+w).trim().length>max&&cur){out.push(cur);cur=w}else cur=(cur+' '+w).trim()}if(cur)out.push(cur);return out}
+// Vozes Kokoro que fazem parte do aplicativo. Quando os arquivos locais existirem,
+// o navegador usa a cópia do próprio site; enquanto o GitHub Actions termina a publicação,
+// o código mantém o fallback para a fonte remota oficial.
+const embeddedVoiceNames=new Set(['pf_dora.bin','pm_alex.bin']);
+const nativeFetch=window.fetch.bind(window);
+window.fetch=async function(input,init){
+  try{
+    const requestUrl=new URL(typeof input==='string'?input:input?.url||input,location.href);
+    const filename=requestUrl.pathname.split('/').pop();
+    if(embeddedVoiceNames.has(filename)){
+      const localUrl=new URL('voices/'+filename,document.baseURI).href;
+      const localResponse=await nativeFetch(localUrl,init);
+      if(localResponse.ok)return localResponse;
+    }
+  }catch{}
+  return nativeFetch(input,init);
+};
 let kokoroInstance=null,kokoroLoading=null;
 function getKokoroVoiceIds(engine){
   try{
@@ -316,12 +333,12 @@ function syncKokoroVoices(engine){
     else els.aiVoice.value=available[0][0];
     els.aiVoice.disabled=false;
     const n=els.aiVoice.parentElement?.querySelector('#aiVoiceNotice');
-    if(n)n.textContent='Kokoro local. Vozes em português disponíveis neste navegador: '+available.map(([,label])=>label.replace(' — masculina','').replace(' — feminina','')).join(', ')+'.';
+    if(n)n.textContent='Kokoro local. Vozes incluídas no aplicativo: '+available.map(([,label])=>label.replace(' — masculina','').replace(' — feminina','')).join(', ')+'.';
   }else{
     const o=document.createElement('option');o.value='';o.textContent='Português não disponível no motor carregado';o.selected=true;els.aiVoice.appendChild(o);
     els.aiVoice.disabled=true;
     const n=els.aiVoice.parentElement?.querySelector('#aiVoiceNotice');
-    if(n)n.textContent='Esta versão do motor Kokoro carregada no navegador não disponibilizou vozes em português. A leitura será direcionada automaticamente para a voz portuguesa do dispositivo para evitar o erro de voz inexistente.';
+    if(n)n.textContent='O aplicativo inclui Dora e Alex. Se o navegador não conseguir carregar uma delas, a leitura usa automaticamente uma voz portuguesa do dispositivo.';
   }
 }
 
