@@ -7,12 +7,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="PDF Voz">
-<meta name="description" content="Leia seus PDFs em voz alta no iPhone.">
+<meta name="description" content="Leia seus PDFs em voz alta no iPhone e no computador.">
 <title>PDF Voz</title>
 <style>
 :root{--bg:#0b0d12;--card:#141820;--card2:#1b202b;--text:#f5f7fb;--muted:#9da6b5;--line:#2b3340;--accent:#775cff;--danger:#ff7b86}
 *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:linear-gradient(180deg,#0b0d12,#090b0f);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display",system-ui,sans-serif;min-height:100vh;padding-bottom:env(safe-area-inset-bottom)}button,input,select{font:inherit}button{cursor:pointer;color:inherit}.top{position:sticky;top:0;z-index:20;padding:12px max(16px,env(safe-area-inset-left)) 12px max(16px,env(safe-area-inset-right));background:rgba(11,13,18,.88);backdrop-filter:blur(18px);border-bottom:1px solid rgba(255,255,255,.06);display:flex;justify-content:space-between;align-items:center}.brand{display:flex;gap:10px;align-items:center}.logo{width:36px;height:36px;border-radius:11px;background:linear-gradient(135deg,#775cff,#4f7fff);display:grid;place-items:center;font-weight:900}.brand b{display:block}.brand small{display:block;color:var(--muted);margin-top:2px}.wrap{max-width:1150px;margin:auto;padding:20px 14px 36px}.hero{background:linear-gradient(145deg,#171b25,#10141b);border:1px solid var(--line);border-radius:24px;padding:24px;display:grid;grid-template-columns:1.35fr .65fr;gap:22px;box-shadow:0 22px 60px rgba(0,0,0,.25)}h1{font-size:clamp(30px,6vw,56px);line-height:1.03;margin:0 0 12px;letter-spacing:-.04em}.lead{color:var(--muted);font-size:16px;line-height:1.55;max-width:650px}.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}.primary,.secondary,.icon{border:0;border-radius:14px;padding:12px 16px}.primary{background:linear-gradient(135deg,#775cff,#5c82ff);font-weight:800}.secondary,.icon{background:var(--card2);border:1px solid var(--line)}.icon{width:44px;height:44px;padding:0}.privacy{margin-top:14px;color:#aeb6c3;font-size:12px}.mock{display:grid;place-items:center}.phone{width:min(240px,70vw);aspect-ratio:.48;background:#050608;border:6px solid #262b34;border-radius:36px;padding:12px;box-shadow:inset 0 0 0 1px #050608,0 18px 45px rgba(0,0,0,.4)}.screen{height:100%;border-radius:26px;background:linear-gradient(180deg,#151922,#0e1117);padding:24px 16px;display:flex;flex-direction:column;gap:13px}.bar{height:9px;border-radius:999px;background:#313847}.bar:nth-child(2){width:82%}.bar:nth-child(3){width:92%}.bar:nth-child(4){width:68%}.play{margin:auto;width:64px;height:64px;border-radius:50%;background:linear-gradient(135deg,#775cff,#5c82ff);display:grid;place-items:center;font-size:24px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}.feat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:15px}.feat strong{display:block;margin:6px 0}.feat span{font-size:22px}.feat p{margin:0;color:var(--muted);font-size:12px;line-height:1.45}.reader{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:22px;overflow:hidden;display:none}.reader.show{display:block}.readerHead{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;gap:10px}.file strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:70vw}.file small{color:var(--muted)}.body{display:grid;grid-template-columns:minmax(0,1fr) 340px;min-height:65vh}.doc{padding:12px;background:#0b0d12;min-width:0}.toolbar{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px;flex-wrap:wrap}.seg button{border:1px solid var(--line);background:var(--card2);padding:9px 12px}.seg button:first-child{border-radius:11px 0 0 11px}.seg button:last-child{border-radius:0 11px 11px 0}.seg .active{background:#242a36}.pages{display:flex;gap:7px;align-items:center}.mini{width:40px;height:36px;background:var(--card2);border:1px solid var(--line);border-radius:10px}.pages input,.startbox input{width:60px;background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center}.stage{background:#e8ebf0;border-radius:15px;min-height:55vh;display:grid;place-items:center;padding:12px;overflow:auto;position:relative}.stage canvas{display:block;background:#fff;max-width:100%;height:auto;box-shadow:0 14px 35px rgba(0,0,0,.25)}.loading{padding:30px;text-align:center;color:#626b78}.text{background:#11151d;border:1px solid var(--line);border-radius:15px;min-height:55vh;padding:20px;line-height:1.6;font-size:20px;white-space:pre-wrap;overflow:auto}.controls{border-left:1px solid var(--line);padding:18px;background:#11151a}.status{font-size:12px;color:#b7beca}.now{font-size:20px;font-weight:800;margin-top:5px;word-break:break-word}.progress{margin:18px 0}.track{height:8px;background:#252b35;border-radius:999px;overflow:hidden}.fill{height:100%;width:0;background:linear-gradient(90deg,#775cff,#5c82ff);transition:width .2s}.player{display:grid;grid-template-columns:48px 1fr 48px;gap:10px;align-items:center}.round{width:48px;height:48px;border-radius:50%;background:var(--card2);border:1px solid var(--line)}.playbtn{height:60px;border:0;border-radius:17px;background:linear-gradient(135deg,#775cff,#5c82ff);font-weight:900;font-size:20px}.field{margin-top:16px}.field label{display:flex;justify-content:space-between;color:var(--muted);font-size:12px;margin-bottom:8px}.field input[type=range],.field select{width:100%}.field select{background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:10px}.row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.startbox{margin-top:18px;background:#161b24;border:1px solid var(--line);border-radius:15px;padding:13px}.startbox .title{font-weight:800}.startbox .sub{color:var(--muted);font-size:12px;line-height:1.4;margin:4px 0 10px}.startrow{display:flex;gap:8px;align-items:center}.startrow button{flex:1}.startrow .pagepick{flex:0 0 60px}.outline{margin-top:10px}.outline select{width:100%;background:var(--card2);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:10px}.outline small{display:block;color:var(--muted);font-size:11px;margin:6px 0}.notice{margin-top:14px;font-size:12px;line-height:1.45;color:#b9c0cb;background:#161b24;border:1px solid var(--line);border-radius:12px;padding:10px}.danger{color:#ff9b9b}.light{--bg:#f4f5f8;--card:#fff;--card2:#f1f3f7;--text:#15181e;--muted:#667080;--line:#d9dee7}.light body{background:var(--bg)}.light .top{background:rgba(244,245,248,.9)}.light .doc{background:#e7e9ee}.light .text{background:#fff}.light .stage{background:#dfe3e9}.light .startbox,.light .notice{background:#f7f8fa}
 @media(max-width:900px){.hero{grid-template-columns:1fr}.mock{display:none}.grid{grid-template-columns:repeat(2,1fr)}.body{grid-template-columns:1fr}.controls{border-left:0;border-top:1px solid var(--line)}}@media(max-width:560px){.wrap{padding:14px 10px 26px}.hero{padding:20px;border-radius:20px}.grid{gap:8px}.feat{padding:12px}.feat p{font-size:11px}.readerHead{align-items:flex-start}.row{grid-template-columns:1fr}.player{grid-template-columns:44px 1fr 44px}.round{width:44px;height:44px}.playbtn{height:56px}.text{font-size:18px}.stage{min-height:48vh}.toolbar{gap:8px}.pages input{width:52px}}
+@media(min-width:1100px){.wrap{max-width:1500px}.body{grid-template-columns:minmax(0,1fr) 340px}.doc{padding:20px}.stage{min-height:75vh;max-height:85vh;align-items:start}.controls{position:sticky;top:65px;align-self:start;max-height:calc(100vh - 75px);overflow-y:auto}.toolbar{flex-wrap:nowrap}.hero{padding:38px}.grid{grid-template-columns:repeat(4,1fr)}}
+@media(max-width:560px){.pages{flex-wrap:wrap}.pages .mini{width:36px}.pages input{width:48px}}
+.stage[hidden],.text[hidden],.loading[hidden],canvas[hidden]{display:none!important}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
@@ -26,15 +29,15 @@
   <div class="hero">
     <div>
       <div style="color:#a99cff;font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase">PDF → voz</div>
-      <h1>Escute seus PDFs no iPhone.</h1>
-      <p class="lead">Escolha um PDF, veja cada página com ajuste automático para documentos grandes e comece a leitura exatamente de onde quiser.</p>
-      <div class="actions"><button id="choose" class="primary">📄 Escolher PDF</button><input id="file" type="file" accept="application/pdf,.pdf" hidden></div>
+      <h1>Escute seus PDFs no celular ou PC.</h1>
+      <p class="lead">Abra um PDF no iPhone ou computador, ajuste o zoom e comece a leitura exatamente de onde quiser.</p>
+      <div class="actions"><button id="choose" class="primary">📄 Escolher PDF</button><input id="file" type="file" accept="application/pdf,.pdf" hidden></div><p class="privacy">No computador, você também pode arrastar um PDF para esta página.</p>
       <div class="privacy">🔒 O arquivo é processado no navegador. O app não envia o PDF para um servidor.</div>
     </div>
     <div class="mock"><div class="phone"><div class="screen"><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="play">▶</div></div></div></div>
   </div>
   <div class="grid">
-    <div class="feat"><span>🔊</span><strong>Leitura por voz</strong><p>Use as vozes disponíveis no iPhone.</p></div>
+    <div class="feat"><span>🔊</span><strong>Leitura por voz</strong><p>Use as vozes disponíveis no seu dispositivo.</p></div>
     <div class="feat"><span>📖</span><strong>Visualização ajustada</strong><p>Escala calculada para caber melhor na tela.</p></div>
     <div class="feat"><span>🎯</span><strong>Comece onde quiser</strong><p>Pule capa, sumário e páginas iniciais.</p></div>
     <div class="feat"><span>🔖</span><strong>Capítulos</strong><p>Quando o PDF tem marcadores, você pode escolher um deles.</p></div>
@@ -50,7 +53,7 @@
     <div class="doc">
       <div class="toolbar">
         <div class="seg"><button id="pdfTab" class="active">PDF</button><button id="textTab">Texto</button></div>
-        <div class="pages"><button id="prev" class="mini">‹</button><input id="page" type="number" min="1" value="1" inputmode="numeric" aria-label="Página"><span>/ <b id="count">0</b></span><button id="next" class="mini">›</button></div>
+        <div class="pages"><button id="zoomOut" class="mini" title="Diminuir zoom">−</button><button id="zoomReset" class="mini" title="Ajustar à largura" style="width:auto;padding:0 10px">Ajustar</button><button id="zoomIn" class="mini" title="Aumentar zoom">+</button><button id="prev" class="mini">‹</button><input id="page" type="number" min="1" value="1" inputmode="numeric" aria-label="Página"><span>/ <b id="count">0</b></span><button id="next" class="mini">›</button></div>
       </div>
       <div id="stage" class="stage"><div id="loading" class="loading">Carregando página...</div><canvas id="canvas"></canvas></div>
       <div id="text" class="text" hidden></div>
@@ -87,13 +90,13 @@ const $=id=>document.getElementById(id);
 const els={
 home:$('home'),reader:$('reader'),choose:$('choose'),file:$('file'),theme:$('theme'),back:$('back'),
 name:$('name'),meta:$('meta'),count:$('count'),page:$('page'),prev:$('prev'),next:$('next'),
-stage:$('stage'),loading:$('loading'),canvas:$('canvas'),text:$('text'),pdfTab:$('pdfTab'),textTab:$('textTab'),
+stage:$('stage'),loading:$('loading'),canvas:$('canvas'),zoomOut:$('zoomOut'),zoomIn:$('zoomIn'),zoomReset:$('zoomReset'),text:$('text'),pdfTab:$('pdfTab'),textTab:$('textTab'),
 now:$('now'),pct:$('pct'),sent:$('sent'),fill:$('fill'),play:$('play'),rewind:$('rewind'),forward:$('forward'),
 startPage:$('startPage'),useCurrent:$('useCurrent'),jumpStart:$('jumpStart'),outline:$('outline'),outlineHint:$('outlineHint'),readMode:$('readMode'),
 speed:$('speed'),speedV:$('speedV'),voice:$('voice'),font:$('font'),fontV:$('fontV'),line:$('line'),lineV:$('lineV'),
 startRead:$('startRead'),stop:$('stop'),notice:$('notice')
 };
-let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,outline:[],pageBlocks:[]};
+let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,outline:[],zoom:1,pageBlocks:[]};
 
 function toast(msg){els.notice.textContent=msg}
 function save(){if(state.pdf)localStorage.setItem('pdfvoz-progress',JSON.stringify({page:state.page,readStartPage:state.readStartPage,file:els.name.textContent}))}
@@ -131,10 +134,10 @@ async function renderPage(n){
     if(token!==state.renderToken)return;
     const base=p.getViewport({scale:1});
     const available=Math.max(260,els.stage.clientWidth-24);
-    let scale=Math.min(available/base.width,2.0);
+    let scale=Math.min(available/base.width,2.0)*state.zoom;
     const maxPixels=5500000;
     scale=Math.min(scale,Math.sqrt(maxPixels/(base.width*base.height)));
-    scale=Math.max(0.45,scale);
+    scale=Math.max(0.25,scale);
     const vp=p.getViewport({scale});
     const dpr=Math.min(window.devicePixelRatio||1,2);
     els.canvas.width=Math.floor(vp.width*dpr);els.canvas.height=Math.floor(vp.height*dpr);
@@ -143,7 +146,7 @@ async function renderPage(n){
     ctx.fillStyle='#fff';ctx.fillRect(0,0,els.canvas.width,els.canvas.height);
     await p.render({canvasContext:ctx,viewport:vp,transform:[dpr,0,0,dpr,0,0],intent:'display'}).promise;
     if(token!==state.renderToken)return;
-    els.canvas.style.visibility='visible';els.loading.hidden=true;
+    els.canvas.style.visibility='visible';els.canvas.hidden=false;els.loading.hidden=true;
     els.text.textContent=state.pages[n-1]||'[Sem texto extraível nesta página]';
     els.now.textContent=els.name.textContent+' — página '+n;
     els.sent.textContent=Math.max(0,n-1)+' / '+state.pdf.numPages;
@@ -299,6 +302,18 @@ function speakFromPage(){
   };save();nextChunk();
 }
 els.choose.onclick=()=>els.file.click();
+els.zoomOut.onclick=()=>{state.zoom=Math.max(.5,Math.round((state.zoom-.25)*100)/100);renderPage(state.page)};
+els.zoomIn.onclick=()=>{state.zoom=Math.min(3,Math.round((state.zoom+.25)*100)/100);renderPage(state.page)};
+els.zoomReset.onclick=()=>{state.zoom=1;renderPage(state.page)};
+document.addEventListener('dragover',e=>{if(e.dataTransfer?.types?.includes('Files'))e.preventDefault()});
+document.addEventListener('drop',e=>{if(e.dataTransfer?.files?.length){e.preventDefault();const file=[...e.dataTransfer.files].find(f=>f.type==='application/pdf'||/\\.pdf$/i.test(f.name));if(file)openPDF(file).catch(err=>toast('Erro ao abrir PDF: '+err.message));else toast('Arraste um arquivo PDF.')}});
+document.addEventListener('keydown',e=>{
+  const tag=document.activeElement?.tagName;
+  if(!state.pdf||['INPUT','TEXTAREA','SELECT'].includes(tag)||e.ctrlKey||e.metaKey||e.altKey)return;
+  if(e.key==='ArrowRight'){e.preventDefault();renderPage(state.page+1)}
+  else if(e.key==='ArrowLeft'){e.preventDefault();renderPage(state.page-1)}
+  else if(e.code==='Space'){e.preventDefault();els.play.click()}
+});
 els.file.onchange=()=>{const f=els.file.files?.[0];if(f)openPDF(f).catch(e=>{console.error(e);toast('Erro ao abrir PDF: '+(e?.message||e))})};
 els.back.onclick=()=>{speechSynthesis.cancel();state.speaking=false;state.paused=false;els.reader.classList.remove('show');els.home.style.display='block'};
 els.prev.onclick=()=>renderPage(state.page-1);els.next.onclick=()=>renderPage(state.page+1);els.page.onchange=()=>renderPage(+els.page.value||1);
