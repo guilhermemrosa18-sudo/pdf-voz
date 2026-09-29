@@ -72,7 +72,9 @@
 
       <div class="field"><label>Modo de leitura</label><select id="readMode"><option value="smart" selected>🧠 Inteligente</option><option value="visual">👁 Ordem visual</option><option value="columns">↕️ Por colunas</option></select></div>
       <div class="field"><label>Velocidade <b id="speedV">1,00×</b></label><input id="speed" type="range" min=".5" max="2.5" step=".05" value="1"></div>
-      <div class="field"><label>Voz</label><select id="voice"></select></div>
+      <div class="field"><label>Tipo de voz</label><select id="voiceEngine"><option value="system">Vozes do dispositivo (iOS / PC)</option><option value="kokoro">IA gratuita — Kokoro (processamento local)</option></select></div>
+      <div class="field" id="systemVoiceField"><label>Voz do dispositivo</label><select id="voice"></select></div>
+      <div class="field" id="aiVoiceField" hidden><label>Voz de IA — português brasileiro</label><select id="aiVoice"><option value="pf_dora">Dora — feminina</option><option value="pm_alex">Alex — masculina</option><option value="pm_santa">Santa — masculina</option></select><div class="notice">Gratuita, sem chave de API. Na primeira utilização, baixa um modelo grande. Em iPhones antigos pode ser lenta ou não funcionar; use as vozes do dispositivo nesses casos.</div></div>
       <div class="row">
         <div class="field"><label>Tamanho <b id="fontV">20px</b></label><input id="font" type="range" min="16" max="30" value="20"></div>
         <div class="field"><label>Espaço <b id="lineV">1,55</b></label><input id="line" type="range" min="1.25" max="2" step=".05" value="1.55"></div>
@@ -93,10 +95,10 @@ name:$('name'),meta:$('meta'),count:$('count'),page:$('page'),prev:$('prev'),nex
 stage:$('stage'),loading:$('loading'),canvas:$('canvas'),zoomOut:$('zoomOut'),zoomIn:$('zoomIn'),zoomReset:$('zoomReset'),text:$('text'),pdfTab:$('pdfTab'),textTab:$('textTab'),
 now:$('now'),pct:$('pct'),sent:$('sent'),fill:$('fill'),play:$('play'),rewind:$('rewind'),forward:$('forward'),
 startPage:$('startPage'),useCurrent:$('useCurrent'),jumpStart:$('jumpStart'),outline:$('outline'),outlineHint:$('outlineHint'),readMode:$('readMode'),
-speed:$('speed'),speedV:$('speedV'),voice:$('voice'),font:$('font'),fontV:$('fontV'),line:$('line'),lineV:$('lineV'),
+speed:$('speed'),speedV:$('speedV'),voice:$('voice'),voiceEngine:$('voiceEngine'),aiVoice:$('aiVoice'),systemVoiceField:$('systemVoiceField'),aiVoiceField:$('aiVoiceField'),font:$('font'),fontV:$('fontV'),line:$('line'),lineV:$('lineV'),
 startRead:$('startRead'),stop:$('stop'),notice:$('notice')
 };
-let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,outline:[],zoom:1,pageBlocks:[]};
+let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,outline:[],zoom:1,aiAudio:null,aiRun:0,pageBlocks:[]};
 
 function toast(msg){els.notice.textContent=msg}
 function save(){if(state.pdf)localStorage.setItem('pdfvoz-progress',JSON.stringify({page:state.page,readStartPage:state.readStartPage,file:els.name.textContent}))}
@@ -175,7 +177,7 @@ async function extractPages(){
   }
 }
 async function openPDF(file){
-  speechSynthesis.cancel();state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';toast('Abrindo PDF…');
+  stopSpeech();toast('Abrindo PDF…');
   const bytes=new Uint8Array(await file.arrayBuffer());
   state.pdf=await pdfjsLib.getDocument({data:bytes}).promise;
   await extractPages();
@@ -288,13 +290,50 @@ function pageSmartText(pageIndex,mode='smart'){
 }
 
 function chunks(text,max=700){const words=text.split(/\s+/);const out=[];let cur='';for(const w of words){if((cur+' '+w).trim().length>max&&cur){out.push(cur);cur=w}else cur=(cur+' '+w).trim()}if(cur)out.push(cur);return out}
+let kokoroInstance=null,kokoroLoading=null;
+async function getKokoro(){
+  if(kokoroInstance)return kokoroInstance;
+  if(!kokoroLoading)kokoroLoading=(async()=>{
+    toast('Carregando motor de IA e modelo de voz. A primeira vez pode demorar alguns minutos…');
+    const {KokoroTTS}=await import('https://esm.sh/kokoro-js@1.2.1?bundle');
+    return await KokoroTTS.from_pretrained('onnx-community/Kokoro-82M-v1.0-ONNX',{dtype:'q8',device:'wasm'});
+  })();
+  try{kokoroInstance=await kokoroLoading;return kokoroInstance}catch(e){kokoroLoading=null;throw e}
+}
+function stopSpeech(){
+  state.aiRun++;speechSynthesis.cancel();
+  if(state.aiAudio){state.aiAudio.pause();state.aiAudio.onended=null;state.aiAudio.removeAttribute('src');state.aiAudio.load();state.aiAudio=null}
+  state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';
+}
+async function speakAI(text){
+  const run=++state.aiRun;let engine;
+  try{engine=await getKokoro()}catch(e){if(run===state.aiRun){stopSpeech();toast('Não foi possível carregar a voz de IA neste navegador. Use as vozes do dispositivo. '+(e.message||''))}return}
+  if(run!==state.aiRun)return;
+  const parts=chunks(text,220);
+  for(let i=0;i<parts.length&&run===state.aiRun;i++){
+    try{
+      toast('IA: gerando trecho '+(i+1)+' de '+parts.length+'…');
+      const result=await engine.generate(parts[i],{voice:els.aiVoice.value,speed:+els.speed.value});
+      if(run!==state.aiRun)return;
+      const blob=result.toBlob();
+      const url=URL.createObjectURL(blob);
+      const audio=new Audio(url);state.aiAudio=audio;
+      await new Promise((resolve,reject)=>{
+        audio.onended=resolve;audio.onerror=()=>reject(new Error('Falha ao reproduzir áudio'));
+        audio.play().catch(reject);
+      }).finally(()=>{URL.revokeObjectURL(url);if(state.aiAudio===audio)state.aiAudio=null});
+    }catch(e){if(run===state.aiRun){stopSpeech();toast('Falha na voz de IA: '+(e.message||'erro desconhecido')+'. Você pode usar as vozes do dispositivo.')}return}
+  }
+  if(run===state.aiRun){state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';toast('Leitura concluída.')}
+}
 function speakFromPage(){
   const start=Math.max(1,Math.min(+els.startPage.value||state.page,state.pdf?.numPages||1));state.readStartPage=start;
   if(!state.pdf){toast('Abra um PDF primeiro.');return}
   const mode=els.readMode.value||'smart';
   const all=Array.from({length:state.pdf.numPages-start+1},(_,i)=>pageSmartText(start-1+i,mode)).filter(Boolean).join('\n\n');
   if(!all){toast('Não há texto extraível a partir dessa página.');return}
-  speechSynthesis.cancel();state.speaking=true;state.paused=false;els.play.textContent='⏸ Pausar';
+  stopSpeech();state.speaking=true;state.paused=false;els.play.textContent='⏸ Pausar';
+  if(els.voiceEngine.value==='kokoro'){save();speakAI(all);return}
   const parts=chunks(all);let i=0;
   const nextChunk=()=>{if(!state.speaking)return;if(i>=parts.length){state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';toast('Leitura concluída.');return}
     const u=new SpeechSynthesisUtterance(parts[i++]);const v=state.voices[+els.voice.value];if(v)u.voice=v;u.rate=+els.speed.value;u.lang=v?.lang||'pt-BR';
@@ -315,15 +354,21 @@ document.addEventListener('keydown',e=>{
   else if(e.code==='Space'){e.preventDefault();els.play.click()}
 });
 els.file.onchange=()=>{const f=els.file.files?.[0];if(f)openPDF(f).catch(e=>{console.error(e);toast('Erro ao abrir PDF: '+(e?.message||e))})};
-els.back.onclick=()=>{speechSynthesis.cancel();state.speaking=false;state.paused=false;els.reader.classList.remove('show');els.home.style.display='block'};
+els.back.onclick=()=>{stopSpeech();els.reader.classList.remove('show');els.home.style.display='block'};
 els.prev.onclick=()=>renderPage(state.page-1);els.next.onclick=()=>renderPage(state.page+1);els.page.onchange=()=>renderPage(+els.page.value||1);
 els.pdfTab.onclick=()=>{els.pdfTab.classList.add('active');els.textTab.classList.remove('active');els.stage.hidden=false;els.text.hidden=true;renderPage(state.page)};
 els.textTab.onclick=()=>{els.textTab.classList.add('active');els.pdfTab.classList.remove('active');els.stage.hidden=true;els.text.hidden=false};
-els.play.onclick=()=>{if(!state.pdf)return;if(!state.speaking)speakFromPage();else if(speechSynthesis.paused){speechSynthesis.resume();state.paused=false;els.play.textContent='⏸ Pausar'}else{speechSynthesis.pause();state.paused=true;els.play.textContent='▶ Continuar'}};
-els.stop.onclick=()=>{speechSynthesis.cancel();state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';toast('Leitura parada.')};
+els.play.onclick=()=>{if(!state.pdf)return;if(!state.speaking){speakFromPage();return}
+  if(els.voiceEngine.value==='kokoro'){if(!state.aiAudio){toast('Aguarde a geração do trecho atual.');return}if(state.paused){state.aiAudio.play().catch(e=>toast(e.message));state.paused=false;els.play.textContent='⏸ Pausar'}else{state.aiAudio.pause();state.paused=true;els.play.textContent='▶ Continuar'}return}
+  if(speechSynthesis.paused){speechSynthesis.resume();state.paused=false;els.play.textContent='⏸ Pausar'}else{speechSynthesis.pause();state.paused=true;els.play.textContent='▶ Continuar'}
+};
+els.stop.onclick=()=>{stopSpeech();toast('Leitura parada.')};
+els.voiceEngine.onchange=()=>{stopSpeech();const ai=els.voiceEngine.value==='kokoro';els.aiVoiceField.hidden=!ai;els.systemVoiceField.hidden=ai;localStorage.setItem('pdfvoz-voiceEngine',els.voiceEngine.value)};
+const savedEngine=localStorage.getItem('pdfvoz-voiceEngine');if(savedEngine==='kokoro'){els.voiceEngine.value='kokoro';els.voiceEngine.onchange()}
 els.startRead.onclick=()=>speakFromPage();
 els.useCurrent.onclick=()=>{state.readStartPage=state.page;els.startPage.value=state.page;save();toast('A leitura vai começar na página '+state.page+'.')};
 els.jumpStart.onclick=()=>{const n=Math.max(1,Math.min(+els.startPage.value||1,state.pdf?.numPages||1));state.readStartPage=n;renderPage(n);toast('Ponto inicial definido na página '+n+'.')};
+els.aiVoice.onchange=()=>localStorage.setItem('pdfvoz-aiVoice',els.aiVoice.value);const savedAiVoice=localStorage.getItem('pdfvoz-aiVoice');if(['pf_dora','pm_alex','pm_santa'].includes(savedAiVoice))els.aiVoice.value=savedAiVoice;
 els.readMode.onchange=()=>{localStorage.setItem('pdfvoz-readMode',els.readMode.value)};
 const savedMode=localStorage.getItem('pdfvoz-readMode');if(savedMode&&['smart','visual','columns'].includes(savedMode))els.readMode.value=savedMode;
 els.outline.onchange=async()=>{const idx=+els.outline.value;if(!Number.isFinite(idx)||!state.outline[idx])return;const p=await destinationToPage(state.outline[idx].dest);if(p){state.readStartPage=p;els.startPage.value=p;await renderPage(p);toast('Ponto inicial: página '+p+'.') }else toast('Esse marcador não informa uma página que o navegador consiga localizar.')};
