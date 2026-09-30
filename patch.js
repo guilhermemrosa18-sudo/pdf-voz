@@ -16,9 +16,8 @@ function progress(i, n) {
   els.sent.textContent = (i + 1) + ' / ' + n;
   els.now.textContent = 'Lendo trecho ' + (i + 1) + ' de ' + n;
 }
-function finish(msg) {
-  state.speaking = false; state.paused = false;
-  els.play.textContent = '▶ Ler'; toast(msg || 'Leitura concluída.');
+function finish(msg){
+  state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';clearPdfHighlight();toast(msg||'Leitura concluída.');
 }
 
 /* 2) Texto limpo: junta hifenizacao, marca pausas e divide em frases */
@@ -192,8 +191,13 @@ function fill(list, from, mode, ai) {
       if (p >= n) { list.done = true; return; }
       var s = pageSents(p, mode);
       if (s.length) {
-        var pg = p + 1;
-        pack(s, list.length ? max : (ai ? 100 : 200), max).forEach(function (c) { list.push({ text: c, page: pg }); });
+        var pg = p + 1, parts = pack(s, list.length ? max : (ai ? 100 : 200), max), off = 0;
+        var pageTotal = parts.reduce(function(n,c){return n + c.trim().split(/\s+/).filter(Boolean).length;},0);
+        parts.forEach(function(c){
+          var words = c.trim().split(/\s+/).filter(Boolean).length;
+          list.push({text:c,page:pg,pageWordOffset:off,pageWordTotal:Math.max(1,pageTotal)});
+          off += words;
+        });
       }
       p++;
     } while (Date.now() - t0 < 12);
@@ -216,7 +220,94 @@ function showProgress(list, i) {
 var css = document.createElement('style');
 css.textContent = '.pv-c.on{background:rgba(119,92,255,.18);border-radius:4px}.pv-w.on{background:#ffd54a;color:#111;border-radius:3px;box-shadow:0 0 0 2px #ffd54a}';
 document.head.appendChild(css);
-function wordsOf(c) {
+
+/* Marcação diretamente sobre a página PDF. */
+css.textContent += '.pv-pdf-overlay{position:absolute;pointer-events:none;z-index:20;overflow:visible}.pv-pdf-word{position:absolute;background:rgba(255,214,60,.7);border:1px solid rgba(210,150,0,.55);border-radius:3px;box-shadow:0 0 0 2px rgba(255,214,60,.2);pointer-events:none}';
+document.head.appendChild(css);
+
+var pdfOverlay=document.createElement('div');
+pdfOverlay.className='pv-pdf-overlay';
+pdfOverlay.setAttribute('aria-hidden','true');
+els.stage.appendChild(pdfOverlay);
+var pdfWordsCache=Object.create(null), pdfLastKey='';
+
+function overlayLines(items){
+  var sorted=(items||[]).filter(function(x){return x&&x.str;}).slice().sort(function(a,b){return b.y-a.y||a.x-b.x;});
+  var lines=[];
+  sorted.forEach(function(it){
+    var line=lines.find(function(l){return Math.abs(l.y-it.y)<=Math.max(3,Math.min(l.h||it.h||10,it.h||10)*.45);});
+    if(!line){line={y:it.y,h:it.h||10,items:[]};lines.push(line);}
+    line.items.push(it);line.h=Math.max(line.h,it.h||10);
+  });
+  lines.forEach(function(l){l.items.sort(function(a,b){return a.x-b.x;});});
+  return lines;
+}
+function overlayWordBoxes(pageIndex){
+  if(pdfWordsCache[pageIndex])return pdfWordsCache[pageIndex];
+  var lines=overlayLines(state.layoutPages[pageIndex]||[]);
+  var detected=typeof detectColumns==='function'?detectColumns(lines):null;
+  var ordered=[];
+  if(detected){
+    for(var c=0;c<detected.k;c++){
+      var center=detected.centers[c].c;
+      lines.filter(function(l){
+        var x0=l.items[0]?.x||0,best=Infinity;
+        detected.centers.forEach(function(cc){best=Math.min(best,Math.abs(x0-cc.c));});
+        return Math.abs(x0-center)===best;
+      }).sort(function(a,b){return b.y-a.y;}).forEach(function(l){ordered.push(l);});
+    }
+  }else ordered=lines;
+  var words=[];
+  ordered.forEach(function(line){
+    var current=null;
+    line.items.forEach(function(it){
+      var s=String(it.str||'');if(!s)return;
+      var tokens=s.match(/\S+/g)||[],total=Math.max(1,s.length),cursor=0;
+      tokens.forEach(function(tok){
+        var pos=s.indexOf(tok,cursor);if(pos<0)pos=cursor;
+        var end=pos+tok.length;
+        var x0=it.x+it.w*(pos/total),x1=it.x+it.w*(end/total);
+        var gap=current?x0-current.x1:999;
+        var join=current&&gap<=Math.max(1.5,(it.h||10)*.22)&&!/[.,;:!?%)\]}]$/.test(current.text)&&!/^[,.;:!?%)\]}]/.test(tok);
+        if(join){current.text+=tok;current.x1=Math.max(current.x1,x1);current.y0=Math.min(current.y0,it.y);current.y1=Math.max(current.y1,it.y+(it.h||10));}
+        else{current={text:tok,x0:x0,x1:x1,y0:it.y,y1:it.y+(it.h||10)};words.push(current);}
+        cursor=end;
+      });
+    });
+  });
+  pdfWordsCache[pageIndex]=words;return words;
+}
+function placePdfOverlay(){
+  var r=els.canvas.getBoundingClientRect(),s=els.stage.getBoundingClientRect();
+  pdfOverlay.style.left=(r.left-s.left+els.stage.scrollLeft)+'px';
+  pdfOverlay.style.top=(r.top-s.top+els.stage.scrollTop)+'px';
+  pdfOverlay.style.width=els.canvas.clientWidth+'px';
+  pdfOverlay.style.height=els.canvas.clientHeight+'px';
+}
+function clearPdfHighlight(){pdfLastKey='';pdfOverlay.textContent='';}
+async function markPdfWord(c,wi){
+  if(!state.pdf||!c)return;
+  var pg=c.page-1;
+  if(state.page!==c.page){try{await renderPage(c.page);}catch(e){}}
+  if(state.page!==c.page)return;
+  var words=overlayWordBoxes(pg);
+  if(!words.length||!c.pageWordTotal)return;
+  placePdfOverlay();
+  var spoken=c.pageWordOffset+Math.max(0,wi||0);
+  var raw=Math.min(words.length-1,Math.max(0,Math.floor(((spoken+.25)/c.pageWordTotal)*words.length)));
+  var target=words[raw],key=c.page+':'+raw;
+  if(key===pdfLastKey)return;
+  pdfLastKey=key;pdfOverlay.textContent='';
+  var page=await state.pdf.getPage(c.page),vp=page.getViewport({scale:1});
+  var sx=els.canvas.clientWidth/vp.width,sy=els.canvas.clientHeight/vp.height;
+  var hi=document.createElement('div');hi.className='pv-pdf-word';
+  hi.style.left=Math.max(0,target.x0*sx-1)+'px';
+  hi.style.top=Math.max(0,(vp.height-target.y1)*sy-1)+'px';
+  hi.style.width=Math.max(5,(target.x1-target.x0)*sx+2)+'px';
+  hi.style.height=Math.max(9,(target.y1-target.y0)*sy+2)+'px';
+  pdfOverlay.appendChild(hi);
+  try{hi.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'});}catch(e){}
+}
   if (!c.w) { c.w = []; c.text.replace(/\S+/g, function (w, o) { c.w.push({ s: o, e: o + w.length }); return w; }); }
   return c.w;
 }
@@ -242,9 +333,10 @@ function draw(list, i) {
   });
   els.text.appendChild(frag);
 }
-function mark(list, i, wi) {
-  draw(list, i);
-  var c = list[i];
+function mark(list,i,wi){
+  draw(list,i);
+  var c=list[i];
+  markPdfWord(c,wi);
   if (curC !== c) {
     if (curC && curC.box) curC.box.classList.remove('on');
     if (c.box) { c.box.classList.add('on'); if (c.box.scrollIntoView) c.box.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
@@ -403,7 +495,7 @@ window.speakFromPage = function () {
   var list = []; curList = list; curC = curW = null; view.list = null;
   fill(list, start, mode, ai);                       // prepara so a 1a pagina agora; o resto vem em segundo plano
   state.speaking = true; state.paused = false; els.play.textContent = '⏸ Pausar'; save();
-  if (els.text.hidden) els.textTab.click();          // mostra o texto para acompanhar a marcacao
+  if (!els.text.hidden) els.pdfTab.click(); // mantém o PDF visível durante a leitura
   if (ai) runAI(list);
   else setTimeout(function () { speakSystem(list, 0); }, 60);
 };
