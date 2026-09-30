@@ -57,12 +57,13 @@ function expand0(t) {
     .replace(/(\d)\s*kg\b/g, '$1 quilos')
     .replace(/(\d)\s*m²/g, '$1 metros quadrados')
     .replace(/(\d)\s*°\s*C\b/g, '$1 graus Celsius')
-    .replace(/\bn\.?\s?[º°]\s*(?=\d)/gi, 'número ')
+    .replace(/\bn(?:\.\s*|\.?\s?[º°]\s*)(?=\d)/gi, 'número ')
     .replace(/\b(\d{1,2})º/g, function (m, n) { return ORD[+n] || n; })
     .replace(/\b(\d{1,2})ª/g, function (m, n) { return ORDF[+n] || n; })
     .replace(SIGLA_RE, function (m) { return SIGLAS[m]; });
 }
 
+var MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
 /* Simbolos e caracteres especiais (leis, aspas, travessoes, ligaduras...) */
 function norm(t) {
   return t
@@ -76,6 +77,9 @@ function norm(t) {
     .replace(/…/g, '.')
     .replace(/[•·▪●■◦◆►▶]/g, ' ')
     .replace(/[©®™]/g, '')
+    .replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g, function (m, d, mo, y) { return (+d) + ' de ' + (MESES[+mo - 1] || mo) + ' de ' + y; })
+    .replace(/(\d[\d.]{2,})\s*\/\s*(\d{2,4})\b/g, '$1, de $2')      // 8.080/1990 -> 8.080, de 1990
+    .replace(/(\d)\s*\/\s*(\d{4})\b/g, '$1, de $2')
     .replace(/&/g, ' e ')
     .replace(/e\/ou/gi, 'e ou').replace(/\//g, ' ')
     .replace(/\+/g, ' mais ').replace(/=/g, ' igual a ')
@@ -185,11 +189,19 @@ async function runAI(list) {
   var mrate = Math.min(1.2, Math.max(0.8, want));   // faixa em que o modelo fala com clareza
   var extra = want / mrate;                          // o restante da velocidade e aplicado no player
   var speaker = 'https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/' + encodeURIComponent(els.aiVoice.value) + '.bin';
+  var st = STEPS;   // ajusta sozinho: se a geracao for mais lenta que a fala, usa menos passos
   function gen(i) {
-    return synth('<pt>' + list[i] + '</pt>', { speaker_embeddings: speaker, num_inference_steps: STEPS, speed: mrate })
+    var t0 = Date.now();
+    return synth('<pt>' + list[i] + '</pt>', { speaker_embeddings: speaker, num_inference_steps: st, speed: mrate })
       .then(function (o) {
         var b = typeof o.toBlob === 'function' ? o.toBlob() : null;
-        if (!b) throw new Error('sem áudio'); return URL.createObjectURL(b);
+        if (!b) throw new Error('sem áudio');
+        var dur = o.audio && o.sampling_rate ? o.audio.length / o.sampling_rate : 0;
+        if (dur > 0) {
+          var rtf = (Date.now() - t0) / 1000 / (dur / (extra || 1));
+          if (rtf > 0.85 && st > 4) st--; else if (rtf < 0.4 && st < STEPS) st++;
+        }
+        return URL.createObjectURL(b);
       });
   }
   var pending = gen(0); pending.catch(function () {});
@@ -223,8 +235,8 @@ window.speakFromPage = function () {
   window.stopSpeech();
   if (ai) unlock();
   state.speaking = true; state.paused = false; els.play.textContent = '⏸ Pausar'; save();
-  if (ai) runAI(pack(sents, 120, 220));
-  else setTimeout(function () { speakSystem(pack(sents, 170, 170)); }, 60);
+  if (ai) runAI(pack(sents, 100, 260));
+  else setTimeout(function () { speakSystem(pack(sents, 200, 200)); }, 60);
 };
 els.play.onclick = function () {
   if (!state.pdf) return;
