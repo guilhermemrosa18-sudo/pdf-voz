@@ -41,7 +41,7 @@ Object.keys(ABBR).forEach(function (k) { keys.push(k); keys.push(k.charAt(0).toU
 keys.sort(function (a, b) { return b.length - a.length; });
 var ABBR_RE = new RegExp('(^|[^A-Za-zÀ-ÿ0-9.])(' + keys.map(esc).join('|') + ')(?=\\s|$|[,;:)])', 'g');
 var SIGLA_RE = new RegExp('\\b(' + Object.keys(SIGLAS).join('|') + ')\\b', 'g');
-function expand(t) {
+function expand0(t) {
   t = t.replace(ABBR_RE, function (m, pre, ab) {
     var v = ABBR[ab.toLowerCase()]; if (!v) return m;
     if (ab.charAt(0) !== ab.charAt(0).toLowerCase()) v = v.charAt(0).toUpperCase() + v.slice(1);
@@ -62,6 +62,33 @@ function expand(t) {
     .replace(/\b(\d{1,2})ª/g, function (m, n) { return ORDF[+n] || n; })
     .replace(SIGLA_RE, function (m) { return SIGLAS[m]; });
 }
+
+/* Simbolos e caracteres especiais (leis, aspas, travessoes, ligaduras...) */
+function norm(t) {
+  return t
+    .replace(/[\u00AD\u200B-\u200F\u2060\uFEFF]/g, '')
+    .replace(/[\u00A0\u2000-\u200A\u202F\t]/g, ' ')
+    .replace(/ﬃ/g, 'ffi').replace(/ﬄ/g, 'ffl').replace(/ﬁ/g, 'fi').replace(/ﬂ/g, 'fl').replace(/ﬀ/g, 'ff')
+    .replace(/§§/g, ' parágrafos ').replace(/§/g, ' parágrafo ').replace(/¶/g, ' parágrafo ')
+    .replace(/[“”«»„]/g, '"').replace(/[‘’´`]/g, "'")
+    .replace(/(\d)\s*[–—―]\s*(\d)/g, '$1 a $2')
+    .replace(/\s*[–—―]\s*/g, ', ')
+    .replace(/…/g, '.')
+    .replace(/[•·▪●■◦◆►▶]/g, ' ')
+    .replace(/[©®™]/g, '')
+    .replace(/&/g, ' e ')
+    .replace(/e\/ou/gi, 'e ou').replace(/\//g, ' ')
+    .replace(/\+/g, ' mais ').replace(/=/g, ' igual a ')
+    .replace(/×/g, ' vezes ').replace(/÷/g, ' dividido por ');
+}
+/* CAIXA ALTA vira normal (senao a voz soletra); tira qualquer caractere que a voz nao entende */
+function cleanEnd(t) {
+  return t
+    .replace(/[A-ZÀ-Ý]{2,}/g, function (w) { return /^[IVXLCDM]+$/.test(w) ? w : w.charAt(0) + w.slice(1).toLowerCase(); })
+    .replace(/[^A-Za-zÀ-ÿ0-9\s.,;:!?'"()\-]/g, ' ')
+    .replace(/\.{2,}/g, '.').replace(/\s+([.,;:!?])/g, '$1').replace(/\s+/g, ' ').trim();
+}
+function expand(t) { return cleanEnd(expand0(norm(t))); }
 
 function buildSents() {
   var start = Math.max(1, Math.min(+els.startPage.value || state.page, state.pdf.numPages));
