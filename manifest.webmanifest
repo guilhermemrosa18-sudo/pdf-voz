@@ -1,0 +1,12 @@
+{
+  "name": "PDF Voz",
+  "short_name": "PDF Voz",
+  "description": "Leitor de PDF com leitura em voz alta.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone"],
+  "background_color": "#0b0d12",
+  "theme_color": "#111318",
+  "lang": "pt-BR"
+}
