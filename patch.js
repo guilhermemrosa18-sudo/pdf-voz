@@ -4,7 +4,7 @@
 (function () {
 "use strict";
 var SIL = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
-var STEPS = 5;               // passos da IA: menos = mais rapido, mais = melhor qualidade
+var STEPS = 8;               // passos da IA: menos = mais rapido, mais = melhor qualidade
 var run = 0, shared = null, endPlay = null, engine = 'sys';
 
 /* 1) Corrige a regex quebrada (\\s) que nao juntava espacos */
@@ -22,6 +22,47 @@ function finish(msg) {
 }
 
 /* 2) Texto limpo: junta hifenizacao, marca pausas e divide em frases */
+/* Abreviacoes e siglas: acrescente as suas nas listas abaixo */
+var ABBR = { 'sr.':'senhor','sra.':'senhora','srta.':'senhorita','dr.':'doutor','dra.':'doutora',
+  'prof.':'professor','profa.':'professora','eng.':'engenheiro','exmo.':'excelentíssimo','exma.':'excelentíssima',
+  'ilmo.':'ilustríssimo','pe.':'padre','sto.':'santo','sta.':'santa','etc.':'etcétera.','p.':'página','pp.':'páginas',
+  'pág.':'página','págs.':'páginas','cap.':'capítulo','caps.':'capítulos','art.':'artigo','arts.':'artigos',
+  'fig.':'figura','tab.':'tabela','vol.':'volume','ed.':'edição','tel.':'telefone','av.':'avenida','ex.':'exemplo',
+  'obs.':'observação','aprox.':'aproximadamente','séc.':'século','cf.':'confira','vs.':'versus','ltda.':'limitada',
+  'cia.':'companhia','p.ex.':'por exemplo','i.e.':'isto é','e.g.':'por exemplo','et al.':'e outros' };
+var SIGLAS = { CPF:'C P F', CNPJ:'C N P J', RG:'R G', PDF:'P D F', CEP:'C E P', PIB:'P I B', OAB:'O A B',
+  INSS:'I N S S', FGTS:'F G T S', CLT:'C L T', STF:'S T F', STJ:'S T J', CNH:'C N H', IPTU:'I P T U',
+  IPVA:'I P V A', USP:'U S P', UFRJ:'U F R J', TCC:'T C C' };
+var ORD = ['','primeiro','segundo','terceiro','quarto','quinto','sexto','sétimo','oitavo','nono','décimo'];
+var ORDF = ['','primeira','segunda','terceira','quarta','quinta','sexta','sétima','oitava','nona','décima'];
+function esc(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+var keys = [];
+Object.keys(ABBR).forEach(function (k) { keys.push(k); keys.push(k.charAt(0).toUpperCase() + k.slice(1)); });
+keys.sort(function (a, b) { return b.length - a.length; });
+var ABBR_RE = new RegExp('(^|[^A-Za-zÀ-ÿ0-9.])(' + keys.map(esc).join('|') + ')(?=\\s|$|[,;:)])', 'g');
+var SIGLA_RE = new RegExp('\\b(' + Object.keys(SIGLAS).join('|') + ')\\b', 'g');
+function expand(t) {
+  t = t.replace(ABBR_RE, function (m, pre, ab) {
+    var v = ABBR[ab.toLowerCase()]; if (!v) return m;
+    if (ab.charAt(0) !== ab.charAt(0).toLowerCase()) v = v.charAt(0).toUpperCase() + v.slice(1);
+    return pre + v;
+  });
+  return t
+    .replace(/US\$\s*([\d.]+(?:,\d+)?)/g, '$1 dólares')
+    .replace(/R\$\s*([\d.]+(?:,\d+)?)/g, '$1 reais')
+    .replace(/(\d),00\b/g, '$1')
+    .replace(/(\d)\.(?=\d{3}(?!\d))/g, '$1')            // 1.500 -> 1500
+    .replace(/(\d)\s*%/g, '$1 por cento')
+    .replace(/(\d)\s*km\b/g, '$1 quilômetros')
+    .replace(/(\d)\s*kg\b/g, '$1 quilos')
+    .replace(/(\d)\s*m²/g, '$1 metros quadrados')
+    .replace(/(\d)\s*°\s*C\b/g, '$1 graus Celsius')
+    .replace(/\bn\.?\s?[º°]\s*(?=\d)/gi, 'número ')
+    .replace(/\b(\d{1,2})º/g, function (m, n) { return ORD[+n] || n; })
+    .replace(/\b(\d{1,2})ª/g, function (m, n) { return ORDF[+n] || n; })
+    .replace(SIGLA_RE, function (m) { return SIGLAS[m]; });
+}
+
 function buildSents() {
   var start = Math.max(1, Math.min(+els.startPage.value || state.page, state.pdf.numPages));
   state.readStartPage = start;
@@ -37,7 +78,7 @@ function buildSents() {
       if (next && l.length < 60 && !/[.!?…:;,]["')»\]]*$/.test(l) && /^[A-ZÀ-Ý0-9]/.test(next)) l += '.';
       t += l + ' ';
     });
-    t = t.replace(/\s+/g, ' ').trim();
+    t = expand(t.replace(/\s+/g, ' ').trim());
     if (!/[.!?…]["')»\]]*$/.test(t)) t += '.';
     out.push.apply(out, t.replace(/([.!?…]["')»\]]*)\s+(?=[A-ZÀ-Ý"“(0-9])/g, '$1\n').split('\n'));
   }
@@ -92,9 +133,11 @@ function unlock() {
     shared.src = SIL; var p = shared.play(); if (p && p.catch) p.catch(function () {});
   } catch (e) {}
 }
-function play(url) {
+function play(url, rate) {
   return new Promise(function (res) {
     var a = shared;
+    a.defaultPlaybackRate = rate || 1; a.playbackRate = rate || 1;
+    a.preservesPitch = true; a.webkitPreservesPitch = true;
     function fin(ok) { if (!endPlay) return; endPlay = null; a.onended = a.onerror = null; URL.revokeObjectURL(url); res(ok); }
     endPlay = function () { fin(true); };
     a.onended = function () { fin(true); }; a.onerror = function () { fin(true); };
@@ -111,9 +154,12 @@ async function runAI(list) {
     speakSystem(list, 0); return;
   }
   if (my !== run) return;
+  var want = +els.speed.value || 1;
+  var mrate = Math.min(1.2, Math.max(0.8, want));   // faixa em que o modelo fala com clareza
+  var extra = want / mrate;                          // o restante da velocidade e aplicado no player
   var speaker = 'https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/' + encodeURIComponent(els.aiVoice.value) + '.bin';
   function gen(i) {
-    return synth('<pt>' + list[i], { speaker_embeddings: speaker, num_inference_steps: STEPS, speed: +els.speed.value })
+    return synth('<pt>' + list[i] + '</pt>', { speaker_embeddings: speaker, num_inference_steps: STEPS, speed: mrate })
       .then(function (o) {
         var b = typeof o.toBlob === 'function' ? o.toBlob() : null;
         if (!b) throw new Error('sem áudio'); return URL.createObjectURL(b);
@@ -127,7 +173,7 @@ async function runAI(list) {
     if (my !== run) { URL.revokeObjectURL(url); return; }
     if (i + 1 < list.length) { pending = gen(i + 1); pending.catch(function () {}); }
     progress(i, list.length);
-    var ok = await play(url);
+    var ok = await play(url, extra);
     if (my !== run) return;
     if (!ok) { finish('O navegador bloqueou o áudio. Toque em Ler novamente.'); return; }
   }
@@ -150,7 +196,7 @@ window.speakFromPage = function () {
   window.stopSpeech();
   if (ai) unlock();
   state.speaking = true; state.paused = false; els.play.textContent = '⏸ Pausar'; save();
-  if (ai) runAI(pack(sents, 140, 320));
+  if (ai) runAI(pack(sents, 120, 220));
   else setTimeout(function () { speakSystem(pack(sents, 170, 170)); }, 60);
 };
 els.play.onclick = function () {
