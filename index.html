@@ -98,7 +98,7 @@ startPage:$('startPage'),useCurrent:$('useCurrent'),jumpStart:$('jumpStart'),out
 speed:$('speed'),speedV:$('speedV'),voice:$('voice'),voiceEngine:$('voiceEngine'),aiVoice:$('aiVoice'),systemVoiceField:$('systemVoiceField'),aiVoiceField:$('aiVoiceField'),font:$('font'),fontV:$('fontV'),line:$('line'),lineV:$('lineV'),
 startRead:$('startRead'),stop:$('stop'),notice:$('notice')
 };
-let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,outline:[],zoom:1,aiAudio:null,aiRun:0,pageBlocks:[]};
+let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,fileToken:0,outline:[],zoom:1,aiAudio:null,aiRun:0,pageBlocks:[]};
 
 function toast(msg){els.notice.textContent=msg}
 function save(){if(state.pdf)localStorage.setItem('pdfvoz-progress',JSON.stringify({page:state.page,readStartPage:state.readStartPage,file:els.name.textContent}))}
@@ -160,38 +160,48 @@ async function renderPage(n){
     toast('Falha na visualização: '+(e?.message||'erro desconhecido'));
   }
 }
-async function extractPages(){
-  state.pages=[];state.layoutPages=[];const total=state.pdf.numPages;
+async function extractPages(pdf,token){
+  const pages=[],layoutPages=[],total=pdf.numPages;
   for(let i=1;i<=total;i++){
-    const p=await state.pdf.getPage(i);const t=await p.getTextContent();
+    if(token!==state.fileToken)return null;
+    const p=await pdf.getPage(i),t=await p.getTextContent();
     const items=(t.items||[]).filter(x=>(x.str||'').trim()).map(x=>({
-      str:(x.str||'').trim(),
-      x:Number(x.transform?.[4]||0),
-      y:Number(x.transform?.[5]||0),
-      w:Number(x.width||0),
-      h:Number(x.height||Math.abs(x.transform?.[3]||0)||10)
+      str:(x.str||'').trim(),x:Number(x.transform?.[4]||0),y:Number(x.transform?.[5]||0),
+      w:Number(x.width||0),h:Number(x.height||Math.abs(x.transform?.[3]||0)||10),hasEOL:!!x.hasEOL
     })).filter(x=>x.str);
-    state.layoutPages.push(items);
-    state.pages.push(items.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim());
+    layoutPages.push(items);
+    pages.push(items.map(x=>x.str).join(' ').replace(/\s+/g,' ').trim());
     if(i%10===0||i===total)toast('Lendo estrutura do PDF… página '+i+' de '+total);
   }
+  return {pages,layoutPages};
 }
+
 async function openPDF(file){
   stopSpeech();
+  const token=++state.fileToken;
   state.pdf=null;state.pages=[];state.layoutPages=[];state.page=1;state.readStartPage=1;state.renderToken++;
   els.canvas.hidden=true;els.canvas.style.visibility='hidden';els.canvas.width=1;els.canvas.height=1;
-  els.loading.hidden=false;els.loading.textContent='Abrindo PDF…';
-  els.text.hidden=true;els.stage.hidden=false;
-  toast('Abrindo PDF…');
-  const bytes=new Uint8Array(await file.arrayBuffer());
-  state.pdf=await pdfjsLib.getDocument({data:bytes}).promise;
-  await extractPages();
-  els.name.textContent=file.name;els.meta.textContent=state.pdf.numPages+' páginas';els.count.textContent=state.pdf.numPages;
-  els.reader.classList.add('show');els.home.style.display='none';window.scrollTo({top:0,behavior:'smooth'});
-  const saved=loadSaved();const start=saved&&saved.file===file.name?Math.min(saved.readStartPage||saved.page||1,state.pdf.numPages):1;
-  state.readStartPage=start;els.startPage.value=start;await renderPage(start);await loadOutline();
-  const totalChars=state.pages.join(' ').trim().length;
-  toast(totalChars?('Texto extraído: '+totalChars.toLocaleString('pt-BR')+' caracteres. Escolha abaixo onde deseja começar.'):'Este PDF não possui texto extraível. Se for escaneado, será necessário OCR.');
+  els.loading.hidden=false;els.loading.textContent='Abrindo PDF…';els.text.hidden=true;els.stage.hidden=false;toast('Abrindo PDF…');
+  try{
+    const bytes=new Uint8Array(await file.arrayBuffer());
+    const pdf=await pdfjsLib.getDocument({data:bytes}).promise;
+    if(token!==state.fileToken)return;
+    const extracted=await extractPages(pdf,token);
+    if(token!==state.fileToken||!extracted)return;
+    state.pdf=pdf;state.pages=extracted.pages;state.layoutPages=extracted.layoutPages;
+    els.name.textContent=file.name;els.meta.textContent=state.pdf.numPages+' páginas';els.count.textContent=state.pdf.numPages;
+    els.reader.classList.add('show');els.home.style.display='none';window.scrollTo({top:0,behavior:'smooth'});
+    const saved=loadSaved();const start=saved&&saved.file===file.name?Math.min(saved.readStartPage||saved.page||1,state.pdf.numPages):1;
+    state.readStartPage=start;els.startPage.value=start;await renderPage(start);await loadOutline();
+    if(token!==state.fileToken)return;
+    const totalChars=state.pages.join(' ').trim().length;
+    toast(totalChars?('Texto extraído: '+totalChars.toLocaleString('pt-BR')+' caracteres. Escolha abaixo onde deseja começar.'):'Este PDF não possui texto extraível. Se for escaneado, será necessário OCR.');
+  }catch(e){
+    if(token!==state.fileToken)return;
+    state.pdf=null;state.pages=[];state.layoutPages=[];
+    els.canvas.hidden=true;els.loading.hidden=false;els.loading.textContent='Não foi possível abrir o PDF.';
+    toast('Erro ao abrir PDF: '+(e?.message||'erro desconhecido'));
+  }
 }
 function normalizeSpaces(s){return (s||'').replace(/\\s+/g,' ').trim()}
 
