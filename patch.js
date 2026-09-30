@@ -580,13 +580,21 @@ window.speakFromPage=async function(){
     try{
       preparingAudio=true;
       await acquireWakeLock();
-      toast("Preparando a leitura completa. Mantenha o app aberto até aparecer “Áudio pronto”.");
+      els.now.textContent="Preparando áudio para segundo plano…";
+      els.sent.textContent="Aguarde antes de bloquear a tela";
+      els.pct.textContent="0%";
+      els.fill.style.width="0%";
+      toast("⏳ PREPARANDO ÁUDIO — não bloqueie a tela ainda.");
       var prepared=await generateWholeReading(start,my);
       if(my!==readingRun||!state.speaking)return;
       window._pdfvozPages=prepared.pages;
       await releaseWakeLock();
       preparingAudio=false;
-      toast("Áudio pronto. Agora a leitura pode continuar com a tela bloqueada.");
+      els.now.textContent="✓ Áudio pronto — pode bloquear a tela";
+      els.sent.textContent="Pode bloquear a tela agora";
+      els.pct.textContent="100%";
+      els.fill.style.width="100%";
+      toast("✓ ÁUDIO PRONTO — agora você pode bloquear a tela.");
       var url=URL.createObjectURL(prepared.blob);
       audio._pdfvozUrl=url;
       audio.src=url;
