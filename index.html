@@ -72,7 +72,7 @@
 
       <div class="field"><label>Modo de leitura</label><select id="readMode"><option value="smart" selected>🧠 Inteligente</option><option value="visual">👁 Ordem visual</option><option value="columns">↕️ Por colunas</option></select></div>
       <div class="field"><label>Velocidade <b id="speedV">1,00×</b></label><input id="speed" type="range" min=".5" max="2.5" step=".05" value="1"></div>
-      <div class="field"><label>Tipo de voz</label><select id="voiceEngine"><option value="system">Vozes do dispositivo (iOS / PC)</option><option value="transformers" selected>IA — Supertonic 2 (Português)</option></select></div>
+      <div class="field"><label>Tipo de voz</label><select id="voiceEngine"><option value="system" selected>Vozes do dispositivo (iOS / PC)</option><option value="transformers">IA — Supertonic 2 (Português)</option></select></div>
       <div class="field" id="systemVoiceField"><label>Voz do dispositivo</label><select id="voice"></select></div>
       <div class="field" id="aiVoiceField"><label>Voz de IA — português</label><select id="aiVoice"><option value="M1" selected>M1 — masculina</option><option value="F1">F1 — feminina</option></select><div id="aiVoiceNotice" class="notice">Supertonic 2: TTS multilíngue com português. A síntese roda localmente no navegador. Na primeira utilização, o modelo pode baixar cerca de 263 MB e ficar em cache.</div></div>
       <div class="row">
@@ -381,7 +381,7 @@ els.play.onclick=()=>{if(!state.pdf)return;if(!state.speaking){speakFromPage();r
 };
 els.stop.onclick=()=>{stopSpeech();toast('Leitura parada.')};
 els.voiceEngine.onchange=()=>{stopSpeech();const ai=els.voiceEngine.value==='transformers';els.aiVoiceField.hidden=!ai;els.systemVoiceField.hidden=ai;localStorage.setItem('pdfvoz-voiceEngine',els.voiceEngine.value)};
-const savedEngine=localStorage.getItem('pdfvoz-voiceEngine');if(savedEngine==='transformers'||savedEngine==='piper'||savedEngine==='kokoro'){els.voiceEngine.value='transformers';els.voiceEngine.onchange()}else{els.voiceEngine.onchange()}
+const savedEngine=localStorage.getItem('pdfvoz-voiceEngine');if(savedEngine==='system'){els.voiceEngine.value='system';}else{els.voiceEngine.value='system';localStorage.setItem('pdfvoz-voiceEngine','system');}els.voiceEngine.onchange();
 els.startRead.onclick=()=>window.speakFromPage();
 els.useCurrent.onclick=()=>{state.readStartPage=state.page;els.startPage.value=state.page;save();toast('A leitura vai começar na página '+state.page+'.')};
 els.jumpStart.onclick=()=>{const n=Math.max(1,Math.min(+els.startPage.value||1,state.pdf?.numPages||1));state.readStartPage=n;renderPage(n);toast('Ponto inicial definido na página '+n+'.')};
@@ -399,6 +399,6 @@ let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTi
 window.addEventListener('orientationchange',()=>setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},350));
 window.addEventListener('beforeunload',save);
 </script>
-  <script src="patch.js?v=14"></script>
+  <script src="patch.js?v=15"></script>
 </body>
 </html>
