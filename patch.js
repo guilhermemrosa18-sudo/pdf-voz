@@ -21,6 +21,22 @@ function repairWords(s){
   }
   return clean(s);
 }
+function repairSpelledLetters(s){
+  var a=clean(s).split(/\s+/),out=[],i=0;
+  while(i<a.length){
+    var run=[],j=i;
+    while(j<a.length&&/^[A-Za-zÀ-ÿ]$/.test(a[j])){run.push(a[j]);j++;}
+    if(run.length>=4){
+      var joined=run.join("");
+      if(joined.length<=18)out.push(joined);
+      else out.push.apply(out,run);
+      i=j;
+    }else{
+      out.push(a[i]);i++;
+    }
+  }
+  return out.join(" ");
+}
 function duplicateClean(s){
   var w=clean(s).split(/\s+/),out=[];
   var weak=/^(a|o|as|os|um|uma|uns|umas|de|da|do|das|dos|e|ou|em|no|na|nos|nas|por|para|com|sem|que|se|não|sim)$/i;
@@ -69,7 +85,7 @@ function rawLines(p){
       h:Math.max.apply(null,line.items.map(function(x){return Math.abs(Number(x.h||10));})),
       minX:Math.min.apply(null,line.items.map(function(x){return Number(x.x||0);})),
       maxX:Math.max.apply(null,line.items.map(function(x){return Number(x.x||0)+Number(x.w||0);})),
-      text:repairWords(out)
+      text:repairSpelledLetters(repairWords(out))
     };
   }).filter(function(l){return l.text;});
 }
@@ -221,7 +237,7 @@ function pageText(p,edges){
   var text=base.join(" ");
   text=text.replace(/(?:o conteúdo deste livro eletrônico|todos os direitos reservados|copyright)[^.!?]*(?:[.!?]|$)/gi," ");
   text=text.replace(/\b\d+\s+de\s+\d+\b/gi," ").replace(/\bgran\.com\.br\b/gi," ").replace(/(?:https?:\/\/|www\.)\S+/gi," ");
-  return duplicateClean(repairWords(clean(text)));
+  return duplicateClean(repairSpelledLetters(repairWords(clean(text))));
 }
 
 function speechText(s){
@@ -243,7 +259,7 @@ function speechText(s){
   s=s.replace(/(\d+(?:[.,]\d+)?)\s*kg\b/gi,"$1 quilos");
   s=s.replace(/R\$\s*(\d[\d.]*(?:,\d{1,2})?)/gi,"$1 reais");
   s=s.replace(/\s+([,.;:!?])/g,"$1").replace(/([,;:]){2,}/g,"$1");
-  return duplicateClean(clean(s));
+  return duplicateClean(repairSpelledLetters(clean(s)));
 }
 
 function splitSpeech(s,max){
