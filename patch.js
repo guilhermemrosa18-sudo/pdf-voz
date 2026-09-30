@@ -16,8 +16,8 @@ function repairWords(s){
   s=clean(s);
   for(var i=0;i<3;i++){
     s=s
-      .replace(/\b([A-ZÀ-Ý])\s+([A-ZÀ-Ý]{1,4})\s+([a-zà-ÿ]{2,})\b/g,"$1$2$3")
-      .replace(/\b([A-ZÀ-Ý]{1,3})\s+([a-zà-ÿ]{2,})\b/g,"$1$2");
+      .replace(/\b([A-ZÀ-Ý])\s+([A-ZÀ-Ý][a-zà-ÿ]{2,})\b/g,"$1$2")
+      .replace(/\b([A-ZÀ-Ý][a-zà-ÿ]{2,})\s+([A-ZÀ-Ý])\s+([a-zà-ÿ]{2,})\b/g,"$1$2$3");
   }
   return clean(s);
 }
