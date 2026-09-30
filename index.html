@@ -378,17 +378,17 @@ async function speakAI(text){
     const speaker='https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/'+encodeURIComponent(supertonicVoice)+'.bin';
     for(let i=0;i<parts.length&&run===state.aiRun;i++){
       toast('IA: gerando trecho '+(i+1)+' de '+parts.length+'…');
-      const output=await synthesizer('<pt>'+parts[i],{speaker_embeddings:speaker,num_inference_steps:8,speed:+els.speed.value});
+      const output=await synthesizer('<pt>'+parts[i],{speaker_embeddings:speaker,num_inference_steps:6,speed:+els.speed.value});
       if(run!==state.aiRun)return;
-      const blob=typeof output.toBlob==='function'?output.toBlob():null;
+      const blob=output&&typeof output.toBlob==='function'?await output.toBlob():null;
       if(!blob)throw new Error('O modelo não retornou áudio reproduzível.');
       const url=URL.createObjectURL(blob);
       const audio=new Audio(url);
-      transformersAudio=audio;state.aiAudio=audio;
+      transformersAudio=audio;state.aiAudio=audio;audio.preload='auto';
       await new Promise((resolve,reject)=>{
         audio.onended=resolve;
         audio.onerror=()=>reject(new Error('Falha ao reproduzir áudio'));
-        audio.play().catch(reject);
+        audio.play().then(()=>{}).catch(reject);
       }).finally(()=>{
         URL.revokeObjectURL(url);
         if(transformersAudio===audio)transformersAudio=null;
@@ -398,8 +398,29 @@ async function speakAI(text){
     if(run===state.aiRun){state.speaking=false;state.paused=false;els.play.textContent='▶ Ler';toast('Leitura concluída.')}
   }catch(e){
     if(run!==state.aiRun)return;
-    stopSpeech();
-    toast('Não foi possível carregar a voz IA. '+(e?.message||'Use as vozes do dispositivo.'));
+    // AI can be blocked by browser autoplay/WASM on desktop. Fall back to system voice.
+    state.aiRun++;
+    if(state.aiAudio){try{state.aiAudio.pause();state.aiAudio.removeAttribute('src');state.aiAudio.load();}catch{}state.aiAudio=null;}
+    if(els.voiceEngine.value==='transformers'){
+      toast('A voz IA não iniciou neste navegador. Usando a voz do dispositivo.');
+      const parts=chunks(text);
+      state.speaking=true;state.paused=false;els.play.textContent='⏸ Pausar';
+      let n=0;
+      const next=()=>{
+        if(!state.speaking)return;
+        if(n>=parts.length){state.speaking=false;els.play.textContent='▶ Ler';toast('Leitura concluída.');return;}
+        const u=new SpeechSynthesisUtterance(parts[n++]);
+        const v=state.voices[Number(els.voice.value)]||state.voices.find(x=>/^pt[-_]BR/i.test(x.lang||''))||state.voices[0];
+        if(v){u.voice=v;u.lang=v.lang||'pt-BR';}else u.lang='pt-BR';
+        u.rate=Number(els.speed.value)||1;u.pitch=1;u.volume=1;state.utterance=u;
+        u.onend=next;u.onerror=()=>{state.speaking=false;els.play.textContent='▶ Ler';toast('A voz do dispositivo encontrou um erro.');};
+        try{speechSynthesis.resume();speechSynthesis.speak(u);}catch{state.speaking=false;els.play.textContent='▶ Ler';toast('Não foi possível iniciar a voz do dispositivo.');}
+      };
+      next();
+    }else{
+      stopSpeech();
+      toast('Não foi possível carregar a voz IA. '+(e?.message||'erro'));
+    }
   }
 }
 function speakFromPage(){
@@ -450,7 +471,19 @@ els.play.onclick=()=>{if(!state.pdf)return;if(!state.speaking){speakFromPage();r
 };
 els.stop.onclick=()=>{stopSpeech();toast('Leitura parada.')};
 els.voiceEngine.onchange=()=>{stopSpeech();const ai=els.voiceEngine.value==='transformers';els.aiVoiceField.hidden=!ai;els.systemVoiceField.hidden=ai;prefSet('voiceEngine',els.voiceEngine.value)};
-const savedEngine=prefGet('voiceEngine','transformers');els.voiceEngine.value=(savedEngine==='system'?'system':'transformers');els.voiceEngine.onchange();
+const engineProfile=prefGet('engineProfileVersion','3');
+if(engineProfile!=='3'){
+  const ua=navigator.userAgent||'';
+  const isMobile=/iPhone|iPad|iPod|Android/i.test(ua);
+  const defaultEngine=isMobile?'transformers':'system';
+  els.voiceEngine.value=defaultEngine;
+  prefSet('voiceEngine',defaultEngine);
+  prefSet('engineProfileVersion','3');
+}else{
+  const savedEngine=prefGet('voiceEngine','system');
+  els.voiceEngine.value=(savedEngine==='system'?'system':'transformers');
+}
+els.voiceEngine.onchange();
 els.startRead.onclick=()=>window.speakFromPage();
 els.useCurrent.onclick=()=>{state.readStartPage=state.page;els.startPage.value=state.page;save();toast('A leitura vai começar na página '+state.page+'.')};
 els.jumpStart.onclick=()=>{const n=Math.max(1,Math.min(+els.startPage.value||1,state.pdf?.numPages||1));state.readStartPage=n;renderPage(n);toast('Ponto inicial definido na página '+n+'.')};
