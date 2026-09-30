@@ -8,6 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="PDF Voz">
 <meta name="description" content="Leia seus PDFs em voz alta no iPhone e no computador.">
+<link rel="manifest" href="manifest.webmanifest">
 <title>PDF Voz</title>
 <style>
 :root{--bg:#0b0d12;--card:#141820;--card2:#1b202b;--text:#f5f7fb;--muted:#9da6b5;--line:#2b3340;--accent:#775cff;--danger:#ff7b86}
@@ -501,6 +502,9 @@ let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTi
 window.addEventListener('orientationchange',()=>setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},350));
 window.addEventListener('beforeunload',save);
 </script>
-  <script src="patch.js?v=32"></script>
+  <script src="patch.js?v=33"></script>
+<script>
+if("serviceWorker" in navigator){navigator.serviceWorker.register("./sw.js",{scope:"./"}).catch(function(e){console.warn("SW:",e)})}
+</script>
 </body>
 </html>
