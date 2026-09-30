@@ -108,18 +108,55 @@ window.speakFromPage=function(){
 function speakSystem(my){
   function next(){
     if(my!==run||!state.speaking)return;
-    if(pos>=list.length){state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";toast("Leitura concluída.");return;}
-    var item=list[pos++];showPage(item.page);
+    if(pos>=list.length){
+      state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";toast("Leitura concluída.");return;
+    }
+    var item=list[pos++], pct=Math.round(pos/list.length*100);
+    showPage(item.page);
     els.sent.textContent=pos+" / "+list.length;
-    els.pct.textContent=Math.round(pos/list.length*100)+"%";
-    els.fill.style.width=Math.round(pos/list.length*100)+"%";
-    var u=new SpeechSynthesisUtterance(item.text),v=state.voices[Number(els.voice.value)];
-    if(v){u.voice=v;u.lang=v.lang;}else u.lang="pt-BR";
-    u.rate=Math.max(.65,Math.min(1.8,Number(els.speed.value)||1));u.pitch=1;u.volume=1;
+    els.pct.textContent=pct+"%";els.fill.style.width=pct+"%";
+    
+    var voices=(speechSynthesis.getVoices()||[]);
+    if(voices.length)state.voices=voices.slice().sort(function(a,b){return (a.lang||"").localeCompare(b.lang||"")||(a.name||"").localeCompare(b.name||"");});
+    var v=state.voices[Number(els.voice.value)];
+    if(!v){
+      v=state.voices.find(function(x){return /^pt-BR$/i.test(x.lang||"");})||
+        state.voices.find(function(x){return /^pt[-_]BR/i.test(x.lang||"");})||
+        state.voices[0];
+      if(v){
+        var vi=state.voices.indexOf(v);
+        if(vi>=0)els.voice.value=vi;
+      }
+    }
+    var u=new SpeechSynthesisUtterance(item.text);
+    if(v){u.voice=v;u.lang=v.lang||"pt-BR";}else{u.lang="pt-BR";}
+    u.rate=Math.max(.65,Math.min(1.8,Number(els.speed.value)||1));
+    u.pitch=1;u.volume=1;
     state.utterance=u;
+    var started=false;
+    u.onstart=function(){started=true;toast("Lendo página "+item.page+"…");};
     u.onend=function(){if(my===run)next();};
-    u.onerror=function(e){if(my!==run||e.error==="canceled"||e.error==="interrupted")return;next();};
-    try{speechSynthesis.speak(u);}catch(e){state.speaking=false;els.play.textContent="▶ Ler";toast("Não foi possível iniciar a voz.");}
+    u.onerror=function(e){
+      if(my!==run||e.error==="canceled"||e.error==="interrupted")return;
+      state.speaking=false;els.play.textContent="▶ Ler";
+      toast("A voz do dispositivo não conseguiu reproduzir este trecho: "+(e.error||"erro desconhecido"));
+    };
+    try{
+      speechSynthesis.cancel();
+      setTimeout(function(){
+        if(my!==run||!state.speaking)return;
+        speechSynthesis.resume();
+        speechSynthesis.speak(u);
+        setTimeout(function(){
+          if(!started&&my===run&&state.speaking&&speechSynthesis.pending===false&&speechSynthesis.speaking===false){
+            toast("A voz não iniciou. Verifique a saída de áudio e selecione uma voz pt-BR.");
+          }
+        },900);
+      },60);
+    }catch(e){
+      state.speaking=false;els.play.textContent="▶ Ler";
+      toast("Erro ao iniciar a voz: "+(e&&e.message||"erro"));
+    }
   }
   next();
 }
