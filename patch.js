@@ -1,251 +1,118 @@
 (function(){
 "use strict";
-var run=0, active=null, audio=null, audioUrl=null, audioCtx=null, audioSource=null, currentBuffer=null, pausedOffset=0, sourceStartedAt=0, wrap=null, overlay=null, cache=Object.create(null), noise=Object.create(null), last="";
-
-function clean(s){return String(s||"").replace(/[\u00A0\t]+/g," ").replace(/\s+/g," ").trim();}
+var run=0, list=[], pos=0;
+function clean(s){return String(s||"").replace(/[\u00A0\t\r]+/g," ").replace(/\s+/g," ").trim();}
 function key(s){return clean(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();}
-function lines(items){
-  var a=(items||[]).filter(function(x){return clean(x.str);}).slice().sort(function(p,q){return Number(q.y||0)-Number(p.y||0)||Number(p.x||0)-Number(q.x||0);});
-  var ls=[];
-  a.forEach(function(it){
-    var y=Number(it.y||0),h=Math.max(7,Math.abs(Number(it.h||10))),l=null;
-    for(var i=0;i<ls.length;i++){if(Math.abs(ls[i].y-y)<=Math.max(2.5,Math.min(h,ls[i].h)*.5)){l=ls[i];break;}}
-    if(!l){l={y:y,h:h,items:[]};ls.push(l);}
-    l.items.push(it);l.h=Math.max(l.h,h);
-  });
-  ls.forEach(function(l){l.items.sort(function(p,q){return Number(p.x||0)-Number(q.x||0);});l.text=join(l.items);});
-  return ls;
+function pageLines(p){
+  var raw=window.pageSmartText?window.pageSmartText(p,"visual"):(state.pages[p]||"");
+  return String(raw||"").split(/\n+/).map(clean).filter(Boolean);
 }
-function join(items){
-  var out="",prev=null;
-  (items||[]).forEach(function(it){
-    var s=clean(it.str);if(!s)return;
-    if(!prev)out=s;else{
-      var gap=Number(it.x||0)-(Number(prev.x||0)+Number(prev.w||0));
-      var h=Math.max(7,Math.min(Math.abs(Number(it.h||10)),Math.abs(Number(prev.h||10))));
-      var same=gap<=Math.max(2.5,h*.52)&&!/[.,;:!?%)\]}]$/.test(out)&&!/^[,.;:!?%)\]}]/.test(s);
-      out+=same?s:" "+s;
-    }
-    prev=it;
-  });
-  for(var i=0;i<2;i++){
-    out=out.replace(/\b([A-ZÀ-Ý]{1,4}) ([A-ZÀ-Ý][a-zà-ÿ]{2,})\b/g,"$1$2");
-    out=out.replace(/\b([A-Za-zÀ-ÿ]{2,}) ([A-ZÀ-Ý]) ([a-zà-ÿ]{2,})\b/g,"$1 $2$3");
-  }
-  return clean(out);
-}
-function obviousNoise(s){
-  s=clean(s);
-  return !s||/^\d+\s+de\s+\d+$/i.test(s)||/^p[áa]gina\s+\d+\s+de\s+\d+$/i.test(s)||
-    /gran\.com\.br/i.test(s)||/^(?:https?:\/\/|www\.)/i.test(s)||/^[-\w]+\.(?:com|com\.br|org|net|br)$/i.test(s);
-}
-function buildNoise(){
-  noise=Object.create(null);
-  if(!state.pdf)return;
+function repeatedEdgeLines(){
   var count=Object.create(null);
   for(var p=0;p<state.pdf.numPages;p++){
-    var ls=lines(state.layoutPages[p]||[]), pick=[];
-    for(var i=0;i<Math.min(3,ls.length);i++)pick.push(ls[i]);
-    for(var j=Math.max(0,ls.length-3);j<ls.length;j++)if(pick.indexOf(ls[j])<0)pick.push(ls[j]);
-    pick.forEach(function(l){var k=key(l.text);if(k)count[k]=(count[k]||0)+1;});
+    var a=pageLines(p), edge=[];
+    for(var i=0;i<Math.min(3,a.length);i++)edge.push(a[i]);
+    for(var j=Math.max(0,a.length-3);j<a.length;j++)if(edge.indexOf(a[j])<0)edge.push(a[j]);
+    edge.forEach(function(s){var k=key(s);if(k)count[k]=(count[k]||0)+1;});
   }
-  Object.keys(count).forEach(function(k){if(count[k]>=2)noise[k]=true;});
+  return count;
 }
-function pageWords(p){
-  if(cache[p])return cache[p];
-  var ls=lines(state.layoutPages[p]||[]),out=[];
-  ls.forEach(function(l,li){
-    var t=l.text,k=key(t);
-    if(obviousNoise(t))return;
-    if(noise[k]&&ls.length>5&&(li<3||li>=ls.length-3))return;
-    var cur=null;
-    l.items.forEach(function(it){
-      var s=clean(it.str);if(!s)return;
-      var x=Number(it.x||0),y=Number(it.y||0),w=Number(it.w||0),h=Math.max(7,Math.abs(Number(it.h||l.h||10)));
-      var parts=s.match(/\S+/g)||[],cursor=0;
-      parts.forEach(function(part){
-        var pos=s.indexOf(part,cursor);if(pos<0)pos=cursor;
-        var end=pos+part.length,total=Math.max(1,s.length);
-        var x0=x+w*pos/total,x1=x+w*end/total;
-        var gap=cur?x0-cur.x1:9999;
-        var merge=cur&&gap<=Math.max(2.5,h*.52)&&!/[.,;:!?%)\]}]$/.test(cur.text)&&!/^[,.;:!?%)\]}]/.test(part);
-        if(merge){cur.text+=part;cur.x1=Math.max(cur.x1,x1);cur.y0=Math.min(cur.y0,y);cur.y1=Math.max(cur.y1,y+h);}
-        else{cur={text:part,x0:x0,x1:x1,y0:y,y1:y+h,page:p};out.push(cur);}
-        cursor=end;
-      });
-    });
+function readablePage(p,count){
+  var a=pageLines(p),out=[];
+  a.forEach(function(s,i){
+    if(/^\d+\s+de\s+\d+$/i.test(s))return;
+    if(/^p[áa]gina\s+\d+(?:\s+de\s+\d+)?$/i.test(s))return;
+    if(/gran\.com\.br/i.test(s))return;
+    if(/^(?:https?:\/\/|www\.)/i.test(s))return;
+    if((i<3||i>=a.length-3)&&a.length>5&&count[key(s)]>=2)return;
+    out.push(s);
   });
-  cache[p]=out;return out;
+  return clean(out.join(" "));
 }
-function spoken(s){
-  s=clean(s).replace(/(?:https?:\/\/|www\.)\S+/gi,"").replace(/\b[-\w]+\.com\.br\b/gi,"");
-  s=s.replace(/\b\d+\s+de\s+\d+\b/gi,"");
-  s=s.replace(/\bn[ºo]?\.\s*/gi,"número ");
-  var a={art:"artigo",arts:"artigos",inc:"inciso",incs:"incisos",cap:"capítulo",caps:"capítulos",prof:"professor",profa:"professora",dr:"doutor",dra:"doutora",sr:"senhor",sra:"senhora",p:"página",pp:"páginas"};
-  s=s.replace(/\b(art|arts|inc|incs|cap|caps|prof|profa|dr|dra|sr|sra|p|pp)\.\b/gi,function(m){return a[m.slice(0,-1).toLowerCase()]||m;});
-  s=s.replace(/\b(CPF|CNPJ|PDF|CEP|INSS|FGTS|CLT|STF|STJ|CNH|IPTU|IPVA|OAB|TCC|SUS)\b/g,function(m){return m.split("").join(" ");});
+function speechText(s){
+  s=clean(s).replace(/(?:https?:\/\/|www\.)\S+/gi," ").replace(/\b[-\w]+\.com\.br\b/gi," ");
+  s=s.replace(/\bLei\s+n[ºo°]?\.?\s*8\.080\s*\/\s*1990\b/gi,"Lei número oito mil e oitenta, de mil novecentos e noventa");
+  s=s.replace(/\b8\.080\s*\/\s*1990\b/g,"oito mil e oitenta, de mil novecentos e noventa");
+  s=s.replace(/\bSUS\b/g,"Sistema Único de Saúde");
+  s=s.replace(/\bPDF\b/g,"P D F").replace(/\bSTF\b/g,"S T F").replace(/\bSTJ\b/g,"S T J");
+  s=s.replace(/\bCLT\b/g,"C L T").replace(/\bINSS\b/g,"I N S S").replace(/\bFGTS\b/g,"F G T S");
+  s=s.replace(/\barts?\.\b/gi,function(m){return m.toLowerCase().indexOf("arts")===0?"artigos ":"artigo ";});
+  s=s.replace(/\bincs?\.\b/gi,function(m){return m.toLowerCase().indexOf("incs")===0?"incisos ":"inciso ";});
+  s=s.replace(/\bpar\.\b/gi,"parágrafo ").replace(/\bcap\.\b/gi,"capítulo ");
+  s=s.replace(/\bprofa?\.\b/gi,function(m){return m.toLowerCase().indexOf("profa")===0?"professora ":"professor ";});
+  s=s.replace(/\bn[ºo°]\.?\s*/gi,"número ").replace(/\bn\.\s*(?=\d)/gi,"número ");
+  s=s.replace(/§+/g," parágrafo ");
   s=s.replace(/(\d+(?:[.,]\d+)?)\s*%/g,"$1 por cento");
   s=s.replace(/(\d+(?:[.,]\d+)?)\s*km\b/gi,"$1 quilômetros");
   s=s.replace(/(\d+(?:[.,]\d+)?)\s*kg\b/gi,"$1 quilos");
   s=s.replace(/R\$\s*(\d[\d.]*(?:,\d{1,2})?)/gi,"$1 reais");
-  s=s.replace(/\s+([,.;:!?])/g,"$1").replace(/([,.;:!?]){2,}/g,"$1");
+  s=s.replace(/\s+([,.;:!?])/g,"$1").replace(/([,;:]){2,}/g,"$1");
   return clean(s);
 }
-function makeList(start){
-  var all=[],out=[],p;
-  buildNoise();
-  for(p=start-1;p<state.pdf.numPages;p++)pageWords(p).forEach(function(w){all.push(w);});
-  var cur=null;
-  all.forEach(function(w){
-    var s=spoken(w.text);if(!s)return;
-    var toks=s.match(/\S+/g)||[s];
-    toks.forEach(function(tok){
-      if(!cur||cur.text.length+tok.length+1>210){
-        if(cur&&cur.text)out.push(cur);
-        cur={text:"",page:w.page,spans:[]};
-      }
-      var st=cur.text.length;
-      cur.text+=(cur.text?" ":"")+tok;
-      cur.spans.push({start:st,end:cur.text.length,word:w});
-    });
-    if(/[.!?]$/.test(w.text)&&cur){out.push(cur);cur=null;}
+function splitSentences(text,max){
+  var parts=String(text||"").match(/[^.!?]+[.!?]+|[^.!?]+$/g)||[],out=[],cur="";
+  parts.forEach(function(part){
+    part=clean(part);if(!part)return;
+    if(cur&&(cur.length+part.length+1)>max){out.push(cur);cur=part;}
+    else cur=(cur+" "+part).trim();
   });
-  if(cur&&cur.text)out.push(cur);
+  if(cur)out.push(cur);
   return out;
 }
-function ensureOverlay(){
-  if(overlay)return;
-  wrap=document.createElement("div");
-  wrap.style.position="relative";wrap.style.display="inline-block";wrap.style.lineHeight="0";
-  els.canvas.parentNode.insertBefore(wrap,els.canvas);wrap.appendChild(els.canvas);
-  overlay=document.createElement("div");
-  overlay.style.position="absolute";overlay.style.left="0";overlay.style.top="0";overlay.style.pointerEvents="none";overlay.style.zIndex="99";
-  wrap.appendChild(overlay);
-  var st=document.createElement("style");
-  st.textContent=".pdfvoz-highlight{position:absolute;background:rgba(255,214,50,.82);border:1px solid rgba(180,130,0,.6);border-radius:3px;box-shadow:0 1px 6px rgba(0,0,0,.16)}";
-  document.head.appendChild(st);
+function makeList(start){
+  var edge=repeatedEdgeLines(),out=[];
+  for(var p=start-1;p<state.pdf.numPages;p++){
+    var t=speechText(readablePage(p,edge));if(!t)continue;
+    splitSentences(t,700).forEach(function(s){out.push({text:s,page:p+1});});
+  }
+  return out;
 }
-function clear(){last="";if(overlay)overlay.textContent="";}
-function mark(c,i){
-  if(!c||!c.spans.length||!state.pdf)return;
-  var span=c.spans[Math.max(0,Math.min(c.spans.length-1,i))],w=span.word,target=w.page+1;
-  Promise.resolve(target===state.page?null:renderPage(target)).then(async function(){
-    if(target!==state.page)return;
-    ensureOverlay();
-    wrap.style.width=els.canvas.clientWidth+"px";wrap.style.height=els.canvas.clientHeight+"px";
-    overlay.style.width=els.canvas.clientWidth+"px";overlay.style.height=els.canvas.clientHeight+"px";
-    var pg=await state.pdf.getPage(target),vp=pg.getViewport({scale:1});
-    var k=target+":"+Math.round(w.x0)+":"+Math.round(w.y0);
-    if(k===last)return;last=k;overlay.textContent="";
-    var sx=els.canvas.clientWidth/vp.width,sy=els.canvas.clientHeight/vp.height;
-    var h=document.createElement("div");h.className="pdfvoz-highlight";
-    h.style.left=Math.max(0,w.x0*sx-1)+"px";
-    h.style.top=Math.max(0,(vp.height-w.y1)*sy-1)+"px";
-    h.style.width=Math.max(5,(w.x1-w.x0)*sx+2)+"px";
-    h.style.height=Math.max(9,(w.y1-w.y0)*sy+2)+"px";
-    overlay.appendChild(h);
-    try{wrap.scrollIntoView({block:"center",behavior:"smooth"});}catch(e){}
-  }).catch(function(){});
-}
-function spanAt(c,pos){
-  for(var i=0;i<c.spans.length;i++)if(pos>=c.spans[i].start&&pos<c.spans[i].end)return i;
-  return Math.max(0,c.spans.length-1);
-}
-function unlockAudio(){try{if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")audioCtx.resume().catch(function(){});}catch(e){}}
-function stopAudioContext(){try{if(audioSource){audioSource.onended=null;audioSource.stop(0);}}catch(e){}audioSource=null;currentBuffer=null;pausedOffset=0;sourceStartedAt=0;}
 function stop(){
-  run++;
-  stopAudioContext();
-  if(active)active.stop=true;
+  run++;list=[];pos=0;
   try{speechSynthesis.cancel();}catch(e){}
-  if(audio){try{audio.pause();}catch(e){}}
-  if(audioUrl){try{URL.revokeObjectURL(audioUrl);}catch(e){}}
-  audio=null;audioUrl=null;active=null;state.speaking=false;state.paused=false;
-  els.play.textContent="▶ Ler";clear();
+  state.speaking=false;state.paused=false;state.utterance=null;els.play.textContent="▶ Ler";
 }
 window.stopSpeech=stop;
 window.speakFromPage=function(){
   if(!state.pdf){toast("Abra um PDF primeiro.");return;}
-  stop();cache=Object.create(null);buildNoise();ensureOverlay();
+  stop();
   var start=Math.max(1,Math.min(Number(els.startPage.value)||state.page,state.pdf.numPages));
-  var l=makeList(start);
-  if(!l.length){toast("Não encontrei texto principal nesta página.");return;}
-  unlockAudio();
-  active=l;state.speaking=true;state.paused=false;els.play.textContent="⏸ Pausar";
-  els.pdfTab.click();
-  /* Para evitar a fala embolada em motores problemáticos, usa a voz do sistema quando a IA não estiver disponível. */
-  if(els.voiceEngine.value==="transformers" && window.getTransformers){runAI(l);}
-  else{if(els.voiceEngine.value==="transformers")toast("Voz IA indisponível nesta sessão; usando a voz do dispositivo.");speakSystem(l);}
+  state.readStartPage=start;
+  list=makeList(start);
+  if(!list.length){toast("Não encontrei texto principal para ler.");return;}
+  state.speaking=true;state.paused=false;els.play.textContent="⏸ Pausar";
+  els.pdfTab.click();toast("Leitura iniciada.");run++;next();
 };
-function speakSystem(l){
-  var my=++run,i=0;
-  function next(){
-    if(my!==run||!state.speaking)return;
-    if(i>=l.length){stop();toast("Leitura concluída.");return;}
-    var c=l[i],u=new SpeechSynthesisUtterance(c.text),v=state.voices[Number(els.voice.value)];
-    if(v){u.voice=v;u.lang=v.lang;}else u.lang="pt-BR";
-    u.rate=Math.max(.5,Math.min(2.1,Number(els.speed.value)||1));
-    var boundary=false,t0=0,timer=null,done=false;
-    function adv(){if(done||my!==run)return;done=true;clearInterval(timer);i++;next();}
-    u.onstart=function(){t0=performance.now();timer=setInterval(function(){if(boundary||state.paused)return;var dur=Math.max(.45,c.text.length*.055/u.rate),r=Math.min(.98,(performance.now()-t0)/1000/dur);mark(c,Math.floor(r*c.spans.length));},100);};
-    u.onboundary=function(e){boundary=true;mark(c,spanAt(c,e.charIndex||0));};
-    u.onend=adv;u.onerror=function(e){if(e.error!=="canceled"&&e.error!=="interrupted")adv();};
-    mark(c,0);speechSynthesis.speak(u);
+function next(){
+  var my=run;
+  if(!state.speaking||my!==run)return;
+  if(pos>=list.length){
+    state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";toast("Leitura concluída.");return;
   }
-  next();
-}
-async function runAI(l){
-  var my=++run,synth;
-  try{synth=await window.getTransformers();}catch(e){if(my===run){toast("A voz IA falhou; usando a voz do dispositivo.");speakSystem(l);}return;}
-  for(var i=0;i<l.length&&my===run;i++){
-    var c=l[i];
-    try{
-      var speaker="https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/"+encodeURIComponent(els.aiVoice?els.aiVoice.value:"M1")+".bin";
-      var o=await synth("<pt>"+c.text,{speaker_embeddings:speaker,num_inference_steps:5,speed:Math.max(.8,Math.min(1.2,Number(els.speed.value)||1))});
-      if(my!==run)return;
-      var b=o&&typeof o.toBlob==="function"?await o.toBlob():null;if(!b)throw new Error("sem audio");
-      var arr=await b.arrayBuffer();
-      var ctx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
-      audioCtx=ctx;
-      if(ctx.state==="suspended")await ctx.resume().catch(function(){});
-      var buf=await ctx.decodeAudioData(arr.slice(0));
-      if(my!==run)return;
-      currentBuffer=buf;pausedOffset=0;
-      await new Promise(function(resolve,reject){
-        var source=ctx.createBufferSource();audioSource=source;source.buffer=buf;source.playbackRate.value=Math.max(.5,Math.min(2.1,Number(els.speed.value)||1));source.connect(ctx.destination);
-        var start=ctx.currentTime;sourceStartedAt=start;
-        source.onended=function(){if(my!==run)return;audioSource=null;currentBuffer=null;resolve();};
-        try{source.start(0,0);}catch(e){audioSource=null;reject(e);return;}
-        (function tick(){if(my!==run||!audioSource)return;var t=Math.max(0,ctx.currentTime-sourceStartedAt);var r=buf.duration?Math.min(.98,t/buf.duration):0;mark(c,Math.floor(r*c.spans.length));requestAnimationFrame(tick);})();
-      });
-    }catch(e){if(my===run){toast("A voz IA falhou; usando a voz do dispositivo.");speakSystem(l.slice(i));}return;}
-  }
-  if(my===run){stop();toast("Leitura concluída.");}
+  var item=list[pos++],pct=Math.round((pos/list.length)*100);
+  els.now.textContent=els.name.textContent+" — página "+item.page;
+  els.pct.textContent=pct+"%";els.fill.style.width=pct+"%";
+  var u=new SpeechSynthesisUtterance(item.text),v=state.voices[Number(els.voice.value)];
+  if(v){u.voice=v;u.lang=v.lang;}else u.lang="pt-BR";
+  u.rate=Math.max(.65,Math.min(1.8,Number(els.speed.value)||1));u.pitch=1;u.volume=1;state.utterance=u;
+  u.onend=function(){if(my===run)next();};
+  u.onerror=function(e){
+    if(my!==run)return;
+    if(e.error==="canceled"||e.error==="interrupted")return;
+    toast("A voz encontrou um erro neste trecho; continuando.");
+    next();
+  };
+  try{speechSynthesis.speak(u);}
+  catch(e){state.speaking=false;els.play.textContent="▶ Ler";toast("Não foi possível iniciar a voz do dispositivo.");}
 }
 els.play.onclick=function(){
   if(!state.pdf)return;
   if(!state.speaking){window.speakFromPage();return;}
-  state.paused=!state.paused;els.play.textContent=state.paused?"▶ Continuar":"⏸ Pausar";
-  if(els.voiceEngine.value==="transformers"){
-    if(!audioCtx||!currentBuffer){toast("Preparando a voz IA...");return;}
-    if(state.paused){
-      try{
-        if(audioCtx.state==="suspended")audioCtx.resume().catch(function(){});
-        var off=Math.max(0,Math.min(currentBuffer.duration,pausedOffset));
-        var source=audioCtx.createBufferSource();
-        audioSource=source;source.buffer=currentBuffer;source.playbackRate.value=Math.max(.5,Math.min(2.1,Number(els.speed.value)||1));source.connect(audioCtx.destination);
-        sourceStartedAt=audioCtx.currentTime-off;
-        source.onended=function(){if(audioSource===source)audioSource=null;};
-        source.start(0,off);
-        state.paused=false;els.play.textContent="⏸ Pausar";
-      }catch(e){toast("Não foi possível continuar o áudio: "+(e&&e.message||"erro"));}
-    }else{
-      pausedOffset=Math.max(0,Math.min(currentBuffer.duration,audioCtx.currentTime-sourceStartedAt));
-      try{if(audioSource){audioSource.onended=null;audioSource.stop(0);}}catch(e){}
-      audioSource=null;state.paused=true;els.play.textContent="▶ Continuar";
-    }
-  }
-  else{if(state.paused)speechSynthesis.pause();else speechSynthesis.resume();}
+  try{
+    if(state.paused){speechSynthesis.resume();state.paused=false;els.play.textContent="⏸ Pausar";}
+    else{speechSynthesis.pause();state.paused=true;els.play.textContent="▶ Continuar";}
+  }catch(e){}
 };
 if(els.stop)els.stop.onclick=function(){stop();toast("Leitura parada.");};
+if(els.startRead)els.startRead.onclick=function(){window.speakFromPage();};
 })();
