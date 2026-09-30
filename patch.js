@@ -442,7 +442,14 @@ async function markPdfWord(c,wi){
   }
   try{pdfWrap.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'});}catch(e){}
 }
-  if (!c.w) { c.w = []; c.text.replace(/\S+/g, function (w, o) { c.w.push({ s: o, e: o + w.length }); return w; }); }
+function wordsOf(c) {
+  if (!c.w) {
+    c.w = [];
+    c.text.replace(/\S+/g, function (w, o) {
+      c.w.push({ s: o, e: o + w.length });
+      return w;
+    });
+  }
   return c.w;
 }
 function wordAt(c, pos) {
