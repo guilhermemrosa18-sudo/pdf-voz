@@ -382,7 +382,7 @@ els.play.onclick=()=>{if(!state.pdf)return;if(!state.speaking){speakFromPage();r
 els.stop.onclick=()=>{stopSpeech();toast('Leitura parada.')};
 els.voiceEngine.onchange=()=>{stopSpeech();const ai=els.voiceEngine.value==='transformers';els.aiVoiceField.hidden=!ai;els.systemVoiceField.hidden=ai;localStorage.setItem('pdfvoz-voiceEngine',els.voiceEngine.value)};
 const savedEngine=localStorage.getItem('pdfvoz-voiceEngine');if(savedEngine==='transformers'||savedEngine==='piper'||savedEngine==='kokoro'){els.voiceEngine.value='transformers';els.voiceEngine.onchange()}else{els.voiceEngine.onchange()}
-els.startRead.onclick=()=>speakFromPage();
+els.startRead.onclick=()=>window.speakFromPage();
 els.useCurrent.onclick=()=>{state.readStartPage=state.page;els.startPage.value=state.page;save();toast('A leitura vai começar na página '+state.page+'.')};
 els.jumpStart.onclick=()=>{const n=Math.max(1,Math.min(+els.startPage.value||1,state.pdf?.numPages||1));state.readStartPage=n;renderPage(n);toast('Ponto inicial definido na página '+n+'.')};
 els.aiVoice.onchange=()=>{supertonicVoice=els.aiVoice.value;localStorage.setItem('pdfvoz-aiVoice',supertonicVoice)};
@@ -399,6 +399,6 @@ let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTi
 window.addEventListener('orientationchange',()=>setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},350));
 window.addEventListener('beforeunload',save);
 </script>
-  <script src="patch.js?v=10"></script>
+  <script src="patch.js?v=11"></script>
 </body>
 </html>
