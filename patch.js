@@ -41,6 +41,42 @@ Object.keys(ABBR).forEach(function (k) { keys.push(k); keys.push(k.charAt(0).toU
 keys.sort(function (a, b) { return b.length - a.length; });
 var ABBR_RE = new RegExp('(^|[^A-Za-zÀ-ÿ0-9.])(' + keys.map(esc).join('|') + ')(?=\\s|$|[,;:)])', 'g');
 var SIGLA_RE = new RegExp('\\b(' + Object.keys(SIGLAS).join('|') + ')\\b', 'g');
+/* Numeros por extenso (a voz de IA erra digitos; palavras ela le bem) */
+var U = ['zero','um','dois','três','quatro','cinco','seis','sete','oito','nove','dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+var DZ = ['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+var CT = ['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+function ate999(n) {
+  if (n === 100) return 'cem';
+  var c = Math.floor(n / 100), r = n % 100, p = [];
+  if (c) p.push(CT[c]);
+  if (r) { if (r < 20) p.push(U[r]); else { var d = Math.floor(r / 10), u = r % 10; p.push(u ? DZ[d] + ' e ' + U[u] : DZ[d]); } }
+  return p.join(' e ');
+}
+function extenso(n) {
+  if (n === 0) return 'zero';
+  var m = Math.floor(n / 1e6), k = Math.floor(n % 1e6 / 1e3), r = n % 1e3, parts = [], vals = [];
+  if (m) { parts.push(m === 1 ? 'um milhão' : ate999(m) + ' milhões'); vals.push(m); }
+  if (k) { parts.push(k === 1 ? 'mil' : ate999(k) + ' mil'); vals.push(k); }
+  if (r) { parts.push(ate999(r)); vals.push(r); }
+  var out = parts[0];
+  for (var i = 1; i < parts.length; i++) {
+    var last = i === parts.length - 1, v = vals[i];
+    out += (last && (v < 100 || v % 100 === 0) ? ' e ' : ' ') + parts[i];
+  }
+  return out;
+}
+function digitos(s) { return s.split('').map(function (x) { return U[+x]; }).join(' '); }
+function numWords(m) {
+  var p = m.split(','), a = p[0], out;
+  if (a.length > 9 || (a.length > 1 && a.charAt(0) === '0')) out = digitos(a);
+  else out = extenso(+a);
+  if (p.length > 1) {
+    var b = p[1];
+    out += ' vírgula ' + ((b.charAt(0) === '0' || b.length > 3) ? digitos(b) : extenso(+b));
+  }
+  return out;
+}
+
 function expand0(t) {
   t = t.replace(ABBR_RE, function (m, pre, ab) {
     var v = ABBR[ab.toLowerCase()]; if (!v) return m;
@@ -60,6 +96,8 @@ function expand0(t) {
     .replace(/\bn(?:\.\s*|\.?\s?[º°]\s*)(?=\d)/gi, 'número ')
     .replace(/\b(\d{1,2})º/g, function (m, n) { return ORD[+n] || n; })
     .replace(/\b(\d{1,2})ª/g, function (m, n) { return ORDF[+n] || n; })
+    .replace(/(\d)\.(?=\d)/g, '$1 ponto ')
+    .replace(/\d+(?:,\d+)?/g, numWords)
     .replace(SIGLA_RE, function (m) { return SIGLAS[m]; });
 }
 
@@ -90,30 +128,39 @@ function cleanEnd(t) {
   return t
     .replace(/[A-ZÀ-Ý]{2,}/g, function (w) { return /^[IVXLCDM]+$/.test(w) ? w : w.charAt(0) + w.slice(1).toLowerCase(); })
     .replace(/[^A-Za-zÀ-ÿ0-9\s.,;:!?'"()\-]/g, ' ')
+    .replace(/([A-Za-zÀ-ÿ]{4,})(\s+\1\b)+/gi, '$1')
     .replace(/\.{2,}/g, '.').replace(/\s+([.,;:!?])/g, '$1').replace(/\s+/g, ' ').trim();
 }
 function expand(t) { return cleanEnd(expand0(norm(t))); }
 
-function buildSents() {
-  var start = Math.max(1, Math.min(+els.startPage.value || state.page, state.pdf.numPages));
-  state.readStartPage = start;
-  var mode = els.readMode.value || 'smart', out = [];
-  for (var p = start - 1; p < state.pdf.numPages; p++) {
-    var lines = (pageSmartText(p, mode) || '').split('\n')
-      .map(function (l) { return l.trim(); }).filter(Boolean);
-    if (!lines.length) continue;
-    var t = '';
-    lines.forEach(function (l, k) {
-      var next = lines[k + 1] || '';
-      if (/[A-Za-zÀ-ÿ]-$/.test(l) && /^[a-zà-ÿ]/.test(next)) { t += l.slice(0, -1); return; }
-      if (next && l.length < 60 && !/[.!?…:;,]["')»\]]*$/.test(l) && /^[A-ZÀ-Ý0-9]/.test(next)) l += '.';
-      t += l + ' ';
-    });
-    t = expand(t.replace(/\s+/g, ' ').trim());
-    if (!/[.!?…]["')»\]]*$/.test(t)) t += '.';
-    out.push.apply(out, t.replace(/([.!?…]["')»\]]*)\s+(?=[A-ZÀ-Ý"“(0-9])/g, '$1\n').split('\n'));
-  }
+function dedupe(items) {
+  var seen = {}, out = [];
+  items.forEach(function (it) {
+    var k = it.str + '|' + Math.round(it.x / 2) + '|' + Math.round(it.y / 2);
+    if (seen[k]) return; seen[k] = 1; out.push(it);
+  });
   return out;
+}
+var curList = null, curC = null, curW = null, view = { list: null, page: 0 };
+
+/* ---------- texto falado de uma pagina ---------- */
+function pageSents(p, mode) {
+  var it = state.layoutPages[p];
+  if (it && !it.__d) { it = state.layoutPages[p] = dedupe(it); it.__d = 1; }
+  var lines = (pageSmartText(p, mode) || '').split('\n')
+    .map(function (l) { return l.trim(); }).filter(Boolean);
+  if (!lines.length) return [];
+  var t = '';
+  lines.forEach(function (l, k) {
+    var next = lines[k + 1] || '';
+    if (/[A-Za-zÀ-ÿ]-$/.test(l) && /^[a-zà-ÿ]/.test(next)) { t += l.slice(0, -1); return; }
+    if (next && l.length < 60 && !/[.!?…:;,]["')»\]]*$/.test(l) && /^[A-ZÀ-Ý0-9]/.test(next)) l += '.';
+    t += l + ' ';
+  });
+  t = expand(t.replace(/\s+/g, ' ').trim());
+  if (!t) return [];
+  if (!/[.!?]["')»\]]*$/.test(t)) t += '.';
+  return t.replace(/([.!?]["')»\]]*)\s+(?=[A-ZÀ-Ý"(0-9])/g, '$1\n').split('\n');
 }
 /* junta frases em trechos; o primeiro e curto para a fala comecar logo */
 function pack(sents, first, max) {
@@ -135,29 +182,112 @@ function pack(sents, first, max) {
   if (cur) out.push(cur);
   return out.filter(Boolean);
 }
+/* prepara as paginas em fatias de 12 ms: o botao Ler nao trava a tela */
+function fill(list, from, mode, ai) {
+  var p = from - 1, n = state.pdf.numPages, max = ai ? 260 : 200;
+  (function step() {
+    if (list.stop) return;
+    var t0 = Date.now();
+    do {
+      if (p >= n) { list.done = true; return; }
+      var s = pageSents(p, mode);
+      if (s.length) {
+        var pg = p + 1;
+        pack(s, list.length ? max : (ai ? 100 : 200), max).forEach(function (c) { list.push({ text: c, page: pg }); });
+      }
+      p++;
+    } while (Date.now() - t0 < 12);
+    setTimeout(step, 0);
+  })();
+}
+function waitFor(list, i) {
+  return new Promise(function (res) {
+    (function chk() { if (list.length > i || list.done || list.stop) res(); else setTimeout(chk, 30); })();
+  });
+}
+function showProgress(list, i) {
+  var pg = list[i].page, n = state.pdf.numPages, p = Math.round((pg - 1) / Math.max(1, n) * 100);
+  els.pct.textContent = p + '%'; els.fill.style.width = p + '%';
+  els.sent.textContent = 'Página ' + pg + ' / ' + n;
+  els.now.textContent = els.name.textContent + ' — página ' + pg;
+}
 
-/* 3) Voz do dispositivo: trechos curtos, sem corrida entre cancel() e speak() */
+/* ---------- marca-texto (palavra atual em amarelo, trecho atual em roxo claro) ---------- */
+var css = document.createElement('style');
+css.textContent = '.pv-c.on{background:rgba(119,92,255,.18);border-radius:4px}.pv-w.on{background:#ffd54a;color:#111;border-radius:3px;box-shadow:0 0 0 2px #ffd54a}';
+document.head.appendChild(css);
+function wordsOf(c) {
+  if (!c.w) { c.w = []; c.text.replace(/\S+/g, function (w, o) { c.w.push({ s: o, e: o + w.length }); return w; }); }
+  return c.w;
+}
+function wordAt(c, pos) {
+  var w = wordsOf(c), k = 0;
+  while (k + 1 < w.length && w[k + 1].s <= pos) k++;
+  return k;
+}
+function draw(list, i) {
+  var pg = list[i].page;
+  if (view.list === list && view.page === pg) return;
+  view.list = list; view.page = pg; els.text.textContent = '';
+  var frag = document.createDocumentFragment();
+  list.forEach(function (c) {
+    if (c.page !== pg) return;
+    var box = document.createElement('span'); box.className = 'pv-c'; c.box = box; c.ws = [];
+    wordsOf(c).forEach(function (w) {
+      var sp = document.createElement('span'); sp.className = 'pv-w';
+      sp.textContent = c.text.slice(w.s, w.e);
+      box.appendChild(sp); box.appendChild(document.createTextNode(' ')); c.ws.push(sp);
+    });
+    frag.appendChild(box); frag.appendChild(document.createTextNode(' '));
+  });
+  els.text.appendChild(frag);
+}
+function mark(list, i, wi) {
+  draw(list, i);
+  var c = list[i];
+  if (curC !== c) {
+    if (curC && curC.box) curC.box.classList.remove('on');
+    if (c.box) { c.box.classList.add('on'); if (c.box.scrollIntoView) c.box.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+    curC = c;
+  }
+  var w = c.ws && c.ws[wi];
+  if (w !== curW) { if (curW) curW.classList.remove('on'); if (w) w.classList.add('on'); curW = w; }
+}
+
+/* ---------- voz do dispositivo ---------- */
 function speakSystem(list, from) {
-  var my = ++run, i = from || 0; engine = 'sys';
+  var my = ++run, i = from || 0; engine = 'sys'; curList = list;
   (function next() {
     if (my !== run) return;
-    if (i >= list.length) { finish(); return; }
-    progress(i, list.length);
-    var u = new SpeechSynthesisUtterance(list[i]), v = state.voices[+els.voice.value];
+    if (i >= list.length) {
+      if (list.done) { finish(list.length ? '' : 'Não há texto extraível a partir dessa página.'); return; }
+      waitFor(list, i).then(next); return;
+    }
+    var c = list[i], u = new SpeechSynthesisUtterance(c.text), v = state.voices[+els.voice.value];
     if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'pt-BR';
     u.rate = +els.speed.value || 1;
     state.utterance = u;                       // evita coleta de lixo no Chrome
-    var done = false, wd;
-    function adv() { if (done || my !== run) return; done = true; clearTimeout(wd); i++; next(); }
-    function arm() { wd = setTimeout(function () { if (state.paused) arm(); else adv(); }, 6000 + list[i].length * 160 / u.rate); }
+    showProgress(list, i); mark(list, i, 0);
+    var done = false, wd, gotB = false, iv, t0 = 0;
+    function stopTimers() { clearTimeout(wd); clearInterval(iv); }
+    function adv() { if (done || my !== run) return; done = true; stopTimers(); i++; next(); }
+    function arm() { wd = setTimeout(function () { if (state.paused) arm(); else adv(); }, 6000 + c.text.length * 160 / u.rate); }
+    u.onstart = function () {
+      t0 = Date.now();
+      iv = setInterval(function () {                // sem eventos de palavra (iOS): estima pelo tempo
+        if (gotB || my !== run || state.paused) return;
+        var tot = c.text.length * 0.068 / u.rate, el = (Date.now() - t0) / 1000;
+        mark(list, i, wordAt(c, Math.min(c.text.length - 1, Math.floor(el / tot * c.text.length))));
+      }, 120);
+    };
+    u.onboundary = function (e) { if (my !== run) return; gotB = true; mark(list, i, wordAt(c, e.charIndex || 0)); };
     u.onend = adv;
     u.onerror = function (e) { if (e.error === 'interrupted' || e.error === 'canceled') return; adv(); };
     arm(); speechSynthesis.speak(u);
   })();
 }
 
-/* 4) Voz de IA: um unico <audio> liberado no clique (iOS), proximo trecho gerado
-      enquanto o atual toca, e queda automatica para a voz do dispositivo */
+/* ---------- voz de IA ---------- */
 function unlock() {
   try {
     if (!shared) { shared = new Audio(); shared.preload = 'auto'; }
@@ -176,8 +306,33 @@ function play(url, rate) {
     var p = a.play(); if (p && p.catch) p.catch(function () { fin(false); });
   });
 }
+function follow(list, i, my) {                    // palavra atual = posicao no audio
+  var c = list[i], len = c.text.length;
+  (function tick() {
+    if (my !== run || !endPlay) return;
+    var d = shared.duration;
+    if (d > 0 && isFinite(d)) mark(list, i, wordAt(c, Math.min(len - 1, Math.floor(shared.currentTime / d * len))));
+    requestAnimationFrame(tick);
+  })();
+}
+/* carrega o modelo em segundo plano (worker) para a tela nao travar; se falhar, usa o modo normal */
+var ttsLoading = null, ttsObj = null;
+window.getTransformers = function () {
+  if (ttsObj) return Promise.resolve(ttsObj);
+  if (!ttsLoading) {
+    ttsLoading = (async function () {
+      toast('Carregando a voz Supertonic 2. Na primeira vez, pode demorar alguns minutos…');
+      var mod = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/+esm?pdfvoz=supertonic2');
+      function make() { return mod.pipeline('text-to-speech', 'onnx-community/Supertonic-TTS-2-ONNX', { device: 'wasm' }); }
+      try { mod.env.backends.onnx.wasm.proxy = true; ttsObj = await make(); }
+      catch (e) { try { mod.env.backends.onnx.wasm.proxy = false; } catch (e2) {} ttsObj = await make(); }
+      return ttsObj;
+    })();
+  }
+  return ttsLoading.catch(function (e) { ttsLoading = null; throw e; });
+};
 async function runAI(list) {
-  var my = ++run, synth; engine = 'ai';
+  var my = ++run, synth; engine = 'ai'; curList = list;
   try { toast('Preparando a voz de IA…'); synth = await getTransformers(); }
   catch (e) {
     if (my !== run) return;
@@ -189,39 +344,50 @@ async function runAI(list) {
   var mrate = Math.min(1.2, Math.max(0.8, want));   // faixa em que o modelo fala com clareza
   var extra = want / mrate;                          // o restante da velocidade e aplicado no player
   var speaker = 'https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/' + encodeURIComponent(els.aiVoice.value) + '.bin';
+  if (!window.__ttsWarm) {                           // 1a geracao do modelo costuma sair falhada: descarta
+    window.__ttsWarm = true;
+    toast('Aquecendo a voz…');
+    try { await synth('<pt>Olá.</pt>', { speaker_embeddings: speaker, num_inference_steps: 4, speed: 1 }); } catch (e) {}
+    if (my !== run) return;
+  }
   var st = STEPS;   // ajusta sozinho: se a geracao for mais lenta que a fala, usa menos passos
   function gen(i) {
     var t0 = Date.now();
-    return synth('<pt>' + list[i] + '</pt>', { speaker_embeddings: speaker, num_inference_steps: st, speed: mrate })
+    return synth('<pt>' + list[i].text + '</pt>', { speaker_embeddings: speaker, num_inference_steps: st, speed: mrate })
       .then(function (o) {
         var b = typeof o.toBlob === 'function' ? o.toBlob() : null;
         if (!b) throw new Error('sem áudio');
         var dur = o.audio && o.sampling_rate ? o.audio.length / o.sampling_rate : 0;
         if (dur > 0) {
           var rtf = (Date.now() - t0) / 1000 / (dur / (extra || 1));
-          if (rtf > 0.85 && st > 4) st--; else if (rtf < 0.4 && st < STEPS) st++;
+          if (rtf > 0.85 && st > 6) st--; else if (rtf < 0.4 && st < STEPS) st++;
         }
         return URL.createObjectURL(b);
       });
   }
-  var pending = gen(0); pending.catch(function () {});
-  for (var i = 0; i < list.length && my === run; i++) {
+  var pending = null, pendingI = -1;
+  for (var i = 0; my === run; i++) {
+    await waitFor(list, i);
+    if (my !== run) return;
+    if (i >= list.length) break;
     var url;
-    try { url = await pending; }
+    try { url = await (pendingI === i ? pending : gen(i)); }
     catch (e) { if (my !== run) return; toast('Falha na voz de IA. Continuando com a voz do dispositivo.'); speakSystem(list, i); return; }
     if (my !== run) { URL.revokeObjectURL(url); return; }
-    if (i + 1 < list.length) { pending = gen(i + 1); pending.catch(function () {}); }
-    progress(i, list.length);
-    var ok = await play(url, extra);
+    if (i + 1 < list.length) { pendingI = i + 1; pending = gen(i + 1); pending.catch(function () {}); }
+    showProgress(list, i); mark(list, i, 0);
+    var pr = play(url, extra); follow(list, i, my);
+    var ok = await pr;
     if (my !== run) return;
     if (!ok) { finish('O navegador bloqueou o áudio. Toque em Ler novamente.'); return; }
   }
-  if (my === run) finish();
+  if (my === run) finish(list.length ? '' : 'Não há texto extraível a partir dessa página.');
 }
 
-/* 5) Substitui as funcoes com defeito do script original */
+/* ---------- controles ---------- */
 window.stopSpeech = function () {
   run++;
+  if (curList) curList.stop = true;
   try { speechSynthesis.cancel(); } catch (e) {}
   if (shared) { try { shared.pause(); } catch (e) {} }
   if (endPlay) endPlay();
@@ -229,14 +395,17 @@ window.stopSpeech = function () {
 };
 window.speakFromPage = function () {
   if (!state.pdf) { toast('Abra um PDF primeiro.'); return; }
-  var sents = buildSents();
-  if (!sents.length) { toast('Não há texto extraível a partir dessa página.'); return; }
-  var ai = els.voiceEngine.value === 'transformers';
+  var start = Math.max(1, Math.min(+els.startPage.value || state.page, state.pdf.numPages));
+  state.readStartPage = start;
+  var ai = els.voiceEngine.value === 'transformers', mode = els.readMode.value || 'smart';
   window.stopSpeech();
   if (ai) unlock();
+  var list = []; curList = list; curC = curW = null; view.list = null;
+  fill(list, start, mode, ai);                       // prepara so a 1a pagina agora; o resto vem em segundo plano
   state.speaking = true; state.paused = false; els.play.textContent = '⏸ Pausar'; save();
-  if (ai) runAI(pack(sents, 100, 260));
-  else setTimeout(function () { speakSystem(pack(sents, 200, 200)); }, 60);
+  if (els.text.hidden) els.textTab.click();          // mostra o texto para acompanhar a marcacao
+  if (ai) runAI(list);
+  else setTimeout(function () { speakSystem(list, 0); }, 60);
 };
 els.play.onclick = function () {
   if (!state.pdf) return;
