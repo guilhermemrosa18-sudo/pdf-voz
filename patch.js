@@ -319,9 +319,7 @@ function getVoice(){
 
 function setupBackgroundAudio(){
   try{
-    if("audioSession" in navigator && navigator.audioSession){
-      navigator.audioSession.type="playback";
-    }
+    if("audioSession" in navigator && navigator.audioSession)navigator.audioSession.type="playback";
   }catch(e){}
   if(!window._pdfvozAudio){
     var audio=document.createElement("audio");
@@ -329,51 +327,91 @@ function setupBackgroundAudio(){
     audio.playsInline=true;
     audio.setAttribute("playsinline","");
     audio.setAttribute("webkit-playsinline","");
+    audio.controls=false;
     audio.style.display="none";
     document.body.appendChild(audio);
     window._pdfvozAudio=audio;
   }
   return window._pdfvozAudio;
 }
-function setMediaSession(item){
+function setMediaSession(){
   try{
     if("mediaSession" in navigator && "MediaMetadata" in window){
       navigator.mediaSession.metadata=new MediaMetadata({
-        title:"Leitura — "+(els.name.textContent||"PDF"),
+        title:"PDF Voz — Leitura",
         artist:"PDF Voz",
-        album:"Página "+item.page
+        album:els.name.textContent||"PDF"
       });
       navigator.mediaSession.playbackState="playing";
+      var audio=setupBackgroundAudio();
+      var actions={
+        play:function(){audio.play().catch(function(){});state.paused=false;els.play.textContent="⏸ Pausar";},
+        pause:function(){audio.pause();state.paused=true;els.play.textContent="▶ Continuar";},
+        seekbackward:function(){audio.currentTime=Math.max(0,audio.currentTime-15);},
+        seekforward:function(){audio.currentTime=Math.min(audio.duration||Infinity,audio.currentTime+15);}
+      };
+      Object.keys(actions).forEach(function(k){
+        try{navigator.mediaSession.setActionHandler(k,actions[k]);}catch(e){}
+      });
     }
   }catch(e){}
 }
 function clearMediaSession(){
-  try{if("mediaSession" in navigator)navigator.mediaSession.playbackState="none";}catch(e){}
+  try{
+    if("mediaSession" in navigator){
+      ["play","pause","seekbackward","seekforward"].forEach(function(k){
+        try{navigator.mediaSession.setActionHandler(k,null);}catch(e){}
+      });
+      navigator.mediaSession.playbackState="none";
+      navigator.mediaSession.metadata=null;
+    }
+  }catch(e){}
 }
 function wavDataInfo(buf){
-  var v=new DataView(buf),p=12;
+  var v=new DataView(buf),p=12,fmt=null;
   while(p+8<=buf.byteLength){
     var id=String.fromCharCode(v.getUint8(p),v.getUint8(p+1),v.getUint8(p+2),v.getUint8(p+3));
     var n=v.getUint32(p+4,true);
-    if(id==="data")return {headerEnd:p+8,dataStart:p+8,dataSize:n,dataSizePos:p+4};
+    if(id==="fmt "&&n>=16){
+      fmt={
+        channels:v.getUint16(p+10,true),
+        sampleRate:v.getUint32(p+12,true),
+        bits:v.getUint16(p+22,true),
+        byteRate:v.getUint32(p+16,true)
+      };
+    }
+    if(id==="data")return {
+      dataStart:p+8,
+      dataSize:n,
+      dataSizePos:p+4,
+      fmt:fmt
+    };
     p+=8+n+(n&1);
   }
   return null;
 }
 async function mergeWavs(blobs){
+  if(!blobs.length)throw new Error("Nenhum áudio foi gerado.");
   if(blobs.length===1)return blobs[0];
   var bufs=await Promise.all(blobs.map(function(b){return b.arrayBuffer();}));
-  var first=bufs[0],info=wavDataInfo(first);
-  if(!info)throw new Error("Áudio TTS não retornou WAV válido.");
+  var firstInfo=wavDataInfo(bufs[0]);
+  if(!firstInfo||!firstInfo.fmt)throw new Error("Áudio TTS inválido.");
   var total=0;
   var infos=bufs.map(function(buf){
-    var x=wavDataInfo(buf);if(!x)throw new Error("Formato de áudio incompatível.");
-    total+=x.dataSize;return x;
+    var x=wavDataInfo(buf);
+    if(!x||!x.fmt)throw new Error("Formato de áudio incompatível.");
+    if(x.fmt.channels!==firstInfo.fmt.channels||
+       x.fmt.sampleRate!==firstInfo.fmt.sampleRate||
+       x.fmt.bits!==firstInfo.fmt.bits||
+       x.fmt.byteRate!==firstInfo.fmt.byteRate){
+      throw new Error("Os trechos de áudio têm formatos diferentes.");
+    }
+    total+=x.dataSize;
+    return x;
   });
-  var out=new Uint8Array(first.slice(0,info.dataStart));
-  var merged=new Uint8Array(info.dataStart+total);
-  merged.set(out,0);
-  var pos=info.dataStart;
+  var merged=new Uint8Array(firstInfo.dataStart+total);
+  merged.set(new Uint8Array(bufs[0],0,firstInfo.dataStart),0);
+  var pos=firstInfo.dataStart;
   bufs.forEach(function(buf,idx){
     var x=infos[idx];
     merged.set(new Uint8Array(buf,x.dataStart,x.dataSize),pos);
@@ -381,8 +419,15 @@ async function mergeWavs(blobs){
   });
   var dv=new DataView(merged.buffer);
   dv.setUint32(4,merged.byteLength-8,true);
-  dv.setUint32(info.dataSizePos,total,true);
+  dv.setUint32(firstInfo.dataSizePos,total,true);
   return new Blob([merged],{type:"audio/wav"});
+}
+function wavDuration(blob){
+  return blob.arrayBuffer().then(function(buf){
+    var x=wavDataInfo(buf);
+    if(!x||!x.fmt||!x.fmt.byteRate)return 0;
+    return x.dataSize/x.fmt.byteRate;
+  });
 }
 async function generateAudioBlob(text){
   if(typeof window.getTransformers!=="function")throw new Error("Motor Supertonic não carregado.");
@@ -404,123 +449,177 @@ async function generateAudioBlob(text){
   }
   return mergeWavs(blobs);
 }
+async function generateWholeReading(start,my){
+  var pageBlobs=[],pageDurations=[],total=state.pdf.numPages-start+1;
+  for(var pno=start;pno<=state.pdf.numPages;pno++){
+    if(my!==readingRun||!state.speaking)throw new Error("Leitura cancelada.");
+    var text=speechText(pageText(pno-1,getEdges()));
+    if(!text)continue;
+    els.now.textContent=els.name.textContent+" — preparando página "+pno;
+    els.sent.textContent=pno+" / "+state.pdf.numPages;
+    els.pct.textContent=Math.round(((pno-start)/Math.max(1,total))*100)+"%";
+    els.fill.style.width=els.pct.textContent;
+    toast("Preparando áudio: página "+pno+" de "+state.pdf.numPages+"…");
+    var blob=await generateAudioBlob(text);
+    if(my!==readingRun||!state.speaking)throw new Error("Leitura cancelada.");
+    pageBlobs.push(blob);
+    pageDurations.push({page:pno,duration:await wavDuration(blob)});
+  }
+  if(!pageBlobs.length)throw new Error("Não encontrei texto principal para ler.");
+  var whole=await mergeWavs(pageBlobs);
+  return {blob:whole,pages:pageDurations};
+}
+function updatePageFromAudio(){
+  var audio=window._pdfvozAudio;
+  if(!audio||!window._pdfvozPages||!window._pdfvozPages.length)return;
+  var t=audio.currentTime||0,acc=0,chosen=window._pdfvozPages[window._pdfvozPages.length-1];
+  for(var i=0;i<window._pdfvozPages.length;i++){
+    var d=window._pdfvozPages[i];
+    if(t<acc+d.duration){chosen=d;break;}
+    acc+=d.duration;
+  }
+  if(currentPage!==chosen.page){
+    currentPage=chosen.page;
+    els.now.textContent=els.name.textContent+" — página "+chosen.page;
+    els.sent.textContent=chosen.page+" / "+state.pdf.numPages;
+    var pct=Math.round(((chosen.page-1)/Math.max(1,state.pdf.numPages))*100);
+    els.pct.textContent=pct+"%";els.fill.style.width=pct+"%";
+    if(state.page!==chosen.page)renderPage(chosen.page);
+  }
+}
 function stop(){
   readingRun++;
   queue=[];queuePos=0;currentPage=0;
   try{speechSynthesis.cancel();}catch(e){}
   try{
     var audio=window._pdfvozAudio;
-    if(audio){audio.pause();audio.removeAttribute("src");audio.load();}
+    if(audio){
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      if(audio._pdfvozUrl)URL.revokeObjectURL(audio._pdfvozUrl);
+      audio._pdfvozUrl=null;
+    }
   }catch(e){}
+  window._pdfvozPages=null;
   state.speaking=false;state.paused=false;state.utterance=null;state.aiAudio=null;
   clearMediaSession();
   if(els.play)els.play.textContent="▶ Ler";
 }
-var bgResumeTimer=null;
-function resumeBackgroundSpeech(){
-  if(!state.speaking)return;
-  try{
-    var audio=window._pdfvozAudio;
-    if(audio && audio.paused && audio.src && state.paused===false)audio.play().catch(function(){});
-  }catch(e){}
-}
-document.addEventListener("visibilitychange",function(){
-  if(document.visibilityState==="visible"){
-    clearTimeout(bgResumeTimer);
-    bgResumeTimer=setTimeout(resumeBackgroundSpeech,120);
-  }
-});
-window.addEventListener("pageshow",function(){setTimeout(resumeBackgroundSpeech,100);});
 window.stopSpeech=stop;
 
-window.speakFromPage=function(){
+var audioProgressTimer=null;
+function startAudioProgress(){
+  clearInterval(audioProgressTimer);
+  audioProgressTimer=setInterval(function(){
+    if(state.speaking)updatePageFromAudio();
+  },500);
+}
+function stopAudioProgress(){
+  clearInterval(audioProgressTimer);audioProgressTimer=null;
+}
+
+window.speakFromPage=async function(){
   if(!state.pdf){toast("Abra um PDF primeiro.");return;}
-  stop();
   var start=Math.max(1,Math.min(Number(els.startPage.value)||state.page,state.pdf.numPages));
+  stop();
   state.readStartPage=start;
-  queue=buildPageQueue(start-1);
-  queuePos=0;currentPage=start;
-  if(!queue.length){toast("Não encontrei texto principal nesta página.");return;}
   state.speaking=true;state.paused=false;
   els.play.textContent="⏸ Pausar";
   els.pdfTab.classList.add("active");els.textTab.classList.remove("active");
   els.stage.hidden=false;els.text.hidden=true;
-  setupBackgroundAudio();
+  var audio=setupBackgroundAudio();
+  setMediaSession();
   readingRun++;
-  speakNext(readingRun);
-};
+  var my=readingRun;
 
-async function speakNext(my){
-  if(my!==readingRun||!state.speaking)return;
-  if(queuePos>=queue.length){
-    var nextPage=currentPage+1;
-    if(nextPage>state.pdf.numPages){
-      state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";
-      clearMediaSession();toast("Leitura concluída.");return;
-    }
-    currentPage=nextPage;queue=buildPageQueue(nextPage-1);queuePos=0;
-    if(!queue.length){speakNext(my);return;}
-  }
-  var item=queue[queuePos++];
-  els.now.textContent=els.name.textContent+" — página "+item.page;
-  var pct=Math.round(((item.page-1)/Math.max(1,state.pdf.numPages))*100);
-  els.pct.textContent=pct+"%";els.fill.style.width=pct+"%";
-  els.sent.textContent=item.page+" / "+state.pdf.numPages;
-  if(state.page!==item.page)renderPage(item.page);
-
-  // Real media playback instead of speechSynthesis: this is the path that can
-  // continue when iOS locks the screen/backgrounds Safari.
   if(els.voiceEngine.value==="transformers"){
     try{
-      toast("Gerando áudio da página "+item.page+"…");
-      var blob=await generateAudioBlob(item.text);
+      toast("Preparando o áudio completo para segundo plano…");
+      var prepared=await generateWholeReading(start,my);
       if(my!==readingRun||!state.speaking)return;
-      var audio=setupBackgroundAudio();
-      var url=URL.createObjectURL(blob);
-      if(audio._pdfvozUrl)URL.revokeObjectURL(audio._pdfvozUrl);
+      window._pdfvozPages=prepared.pages;
+      var url=URL.createObjectURL(prepared.blob);
       audio._pdfvozUrl=url;
       audio.src=url;
       audio.load();
-      setMediaSession(item);
-      await new Promise(function(resolve,reject){
-        audio.onended=function(){resolve();};
-        audio.onerror=function(){reject(new Error("Falha ao reproduzir o áudio."));};
-        audio.onpause=function(){
-          if(state.paused||!state.speaking)return;
-        };
-        audio.play().then(function(){
-          toast("Lendo página "+item.page+"…");
-        }).catch(reject);
-      });
-      if(my===readingRun&&state.speaking){
-        URL.revokeObjectURL(url);audio._pdfvozUrl=null;
-        setTimeout(function(){speakNext(my);},0);
+      audio.onended=function(){
+        if(my!==readingRun)return;
+        state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";
+        stopAudioProgress();clearMediaSession();
+        toast("Leitura concluída.");
+      };
+      audio.onerror=function(){
+        if(my!==readingRun)return;
+        state.speaking=false;els.play.textContent="▶ Ler";stopAudioProgress();clearMediaSession();
+        toast("Falha ao reproduzir o áudio preparado.");
+      };
+      audio.onplay=function(){state.paused=false;els.play.textContent="⏸ Pausar";setMediaSession();};
+      audio.onpause=function(){if(state.speaking&&!state.paused)state.paused=true;els.play.textContent=state.paused?"▶ Continuar":"⏸ Pausar";};
+      startAudioProgress();
+      try{
+        await audio.play();
+        toast("Lendo em segundo plano. Pode bloquear a tela.");
+      }catch(e){
+        state.paused=true;els.play.textContent="▶ Continuar";
+        toast("O navegador bloqueou o início automático. Toque em ▶ Continuar.");
       }
       return;
     }catch(e){
-      if(my!==readingRun||!state.speaking)return;
-      state.speaking=false;els.play.textContent="▶ Ler";clearMediaSession();
-      toast("Não foi possível reproduzir a voz IA: "+(e&&e.message||"erro"));
+      if(my!==readingRun)return;
+      state.speaking=false;els.play.textContent="▶ Ler";stopAudioProgress();clearMediaSession();
+      toast("Não foi possível preparar a voz IA: "+(e&&e.message||"erro"));
       return;
     }
   }
 
+  // A voz do sistema continua disponível, mas o navegador não garante que
+  // speechSynthesis sobreviva ao bloqueio de tela. Para segundo plano use Supertonic 2.
   if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)){
-    state.speaking=false;els.play.textContent="▶ Ler";
-    toast("Este navegador não disponibilizou a leitura por voz.");return;
+    state.speaking=false;els.play.textContent="▶ Ler";clearMediaSession();
+    toast("Este navegador não disponibilizou a leitura por voz.");
+    return;
   }
-  var v=getVoice(),u=new SpeechSynthesisUtterance(item.text);
-  if(v){u.voice=v;u.lang=v.lang||"pt-BR";}else u.lang="pt-BR";
-  u.rate=Math.max(.6,Math.min(1.8,Number(els.speed.value)||1));u.pitch=1;u.volume=1;state.utterance=u;
-  u.onstart=function(){toast("Lendo página "+item.page+"…");};
-  u.onend=function(){if(my===readingRun)setTimeout(function(){speakNext(my);},0);};
-  u.onerror=function(ev){
-    if(my!==readingRun||ev.error==="canceled"||ev.error==="interrupted")return;
-    state.speaking=false;els.play.textContent="▶ Ler";toast("A voz do dispositivo não iniciou.");
-  };
-  try{speechSynthesis.speak(u);}catch(e){state.speaking=false;els.play.textContent="▶ Ler";toast("Erro ao iniciar a voz.");}
-}
+  var textParts=[];
+  for(var p=start;p<=state.pdf.numPages;p++){
+    var tx=speechText(pageText(p-1,getEdges()));
+    if(tx)textParts.push(tx);
+  }
+  var all=textParts.join(" ");
+  var parts=splitSpeech(all,650),i=0;
+  function nextSystem(){
+    if(!state.speaking)return;
+    if(i>=parts.length){state.speaking=false;els.play.textContent="▶ Ler";clearMediaSession();return;}
+    var u=new SpeechSynthesisUtterance(parts[i++]),v=getVoice();
+    if(v){u.voice=v;u.lang=v.lang||"pt-BR";}else u.lang="pt-BR";
+    u.rate=Math.max(.6,Math.min(1.8,Number(els.speed.value)||1));u.pitch=1;u.volume=1;state.utterance=u;
+    u.onend=nextSystem;
+    u.onerror=function(ev){if(ev.error==="canceled"||ev.error==="interrupted")return;state.speaking=false;els.play.textContent="▶ Ler";};
+    try{speechSynthesis.speak(u);}catch(e){state.speaking=false;els.play.textContent="▶ Ler";}
+  }
+  nextSystem();
+};
 
+els.play.onclick=function(){
+  if(!state.pdf)return;
+  if(!state.speaking){window.speakFromPage();return;}
+  if(els.voiceEngine.value==="transformers"){
+    var audio=window._pdfvozAudio;
+    if(!audio||!audio.src){toast("O áudio ainda está sendo preparado.");return;}
+    if(audio.paused){
+      audio.play().then(function(){state.paused=false;els.play.textContent="⏸ Pausar";setMediaSession();}).catch(function(e){toast("Não foi possível continuar: "+(e&&e.message||"erro"));});
+    }else{
+      audio.pause();state.paused=true;els.play.textContent="▶ Continuar";
+    }
+    return;
+  }
+  try{
+    if(speechSynthesis.paused){speechSynthesis.resume();state.paused=false;els.play.textContent="⏸ Pausar";}
+    else{speechSynthesis.pause();state.paused=true;els.play.textContent="▶ Continuar";}
+  }catch(e){}
+};
+if(els.stop)els.stop.onclick=function(){stop();toast("Leitura parada.");};
+if(els.startRead)els.startRead.onclick=function(){window.speakFromPage();};
 els.play.onclick=function(){
   if(!state.pdf)return;
   if(!state.speaking){window.speakFromPage();return;}
