@@ -82,80 +82,145 @@ function isFooter(s){
     /gran\.com\.br/i.test(s) ||
     /^(?:©|copyright|todos os direitos|o conteúdo deste livro|este conteúdo|proibida a reprodução)/i.test(s);
 }
-
 function edgeCounts(){
   var top=Object.create(null),bottom=Object.create(null);
   for(var p=0;p<state.pdf.numPages;p++){
-    var lines=rawLines(p);
-    if(!lines.length)continue;
-    var ys=lines.map(function(l){return l.y;});
-    var hi=Math.max.apply(null,ys),lo=Math.min.apply(null,ys),span=Math.max(1,hi-lo);
+    var lines=rawLines(p); if(!lines.length)continue;
+    var ys=lines.map(function(l){return l.y;}),hi=Math.max.apply(null,ys),lo=Math.min.apply(null,ys),span=Math.max(1,hi-lo);
     lines.forEach(function(l){
-      var k=key(l.text);if(!k)return;
+      var k=key(l.text); if(!k)return;
       if(hi-l.y<span*.18)top[k]=(top[k]||0)+1;
       if(l.y-lo<span*.18)bottom[k]=(bottom[k]||0)+1;
     });
   }
   return {top:top,bottom:bottom};
 }
+function clusterColumns(lines,k){
+  if(lines.length<k*3)return null;
+  var xs=lines.map(function(l){return l.minX;}).filter(isFinite).sort(function(a,b){return a-b;});
+  if(xs.length<k*3)return null;
+  var min=xs[0],max=xs[xs.length-1],range=Math.max(1,max-min),centers=[];
+  for(var i=0;i<k;i++)centers.push(min+range*(i+.5)/k);
+  for(var pass=0;pass<20;pass++){
+    var groups=Array.from({length:k},function(){return [];});
+    xs.forEach(function(x){
+      var bi=0,bd=Math.abs(x-centers[0]);
+      for(var j=1;j<k;j++){var d=Math.abs(x-centers[j]);if(d<bd){bd=d;bi=j;}}
+      groups[bi].push(x);
+    });
+    var next=groups.map(function(g,idx){return g.length?g.reduce(function(s,x){return s+x;},0)/g.length:centers[idx];});
+    var stable=next.every(function(x,idx){return Math.abs(x-centers[idx])<.5;});
+    centers=next;if(stable)break;
+  }
+  centers.sort(function(a,b){return a-b;});
+  var cols=centers.map(function(center,ci){
+    return lines.filter(function(l){
+      var bi=0,bd=Math.abs(l.minX-centers[0]);
+      for(var j=1;j<centers.length;j++){var d=Math.abs(l.minX-centers[j]);if(d<bd){bd=d;bi=j;}}
+      return bi===ci;
+    }).sort(function(a,b){return b.y-a.y;});
+  });
+  var bounds=cols.map(function(col){return {minX:Math.min.apply(null,col.map(function(l){return l.minX;})),maxX:Math.max.apply(null,col.map(function(l){return l.maxX;})),lines:col};});
+  for(var q=0;q<bounds.length-1;q++){
+    if(bounds[q+1].minX-bounds[q].maxX<range*.035)return null;
+  }
+  return {cols:cols,bounds:bounds,range:range};
+}
+function cellGroups(lines){
+  var a=lines.slice().sort(function(x,y){return y.y-x.y;}),groups=[];
+  a.forEach(function(l){
+    var g=groups[groups.length-1];
+    if(!g){groups.push([l]);return;}
+    var prev=g[g.length-1],gap=prev.y-l.y,h=Math.max(prev.h||10,l.h||10);
+    if(gap<=h*1.8)g.push(l);else groups.push([l]);
+  });
+  return groups.map(function(g){
+    return {lines:g,top:g[0].y,bottom:g[g.length-1].y,text:clean(g.map(function(l){return l.text;}).join(" "))};
+  });
+}
+function tableReading(p){
+  var lines=rawLines(p).filter(function(l){return l.text&&!isFooter(l.text);});
+  if(lines.length<6)return null;
+  var chosen=null;
+  [2,3].some(function(k){
+    var cl=clusterColumns(lines,k); if(!cl)return false;
+    var counts=cl.cols.map(function(x){return x.length;});
+    if(Math.min.apply(null,counts)<3)return false;
+    var width=cl.range;
+    if(k===2){
+      var b0=cl.bounds[0],b1=cl.bounds[1];
+      if((b0.maxX-b0.minX)>width*.40)return false;
+      if((b1.maxX-b1.minX)<width*.40)return false;
+    }else{
+      var f=cl.bounds[0],m=cl.bounds[1],r=cl.bounds[2];
+      if((f.maxX-f.minX)>width*.40)return false;
+      if(m.minX-f.maxX<width*.02||r.minX-m.maxX<width*.02)return false;
+    }
+    chosen={k:k,layout:cl};return true;
+  });
+  if(!chosen)return null;
+
+  var cols=chosen.layout.cols, rows=cellGroups(cols[0]);
+  if(rows.length<3)return null;
+  var data=[];
+  for(var r=0;r<rows.length;r++){
+    var row=rows[r],upper=r? (rows[r-1].bottom+row.top)/2 : Infinity,lower=(r+1<rows.length)?(row.bottom+rows[r+1].top)/2:-Infinity;
+    var cells=[];
+    for(var c=1;c<cols.length;c++){
+      var parts=cols[c].filter(function(l){return l.y<=upper&&l.y>lower;});
+      cells.push(clean(parts.map(function(l){return l.text;}).join(" ")));
+    }
+    data.push({label:row.text,cells:cells});
+  }
+  function isHeaderRow(row){
+    var l=key(row.label),r=key(row.cells.join(" "));
+    return /^(significado|tópico|topico|item|conceito|categoria|nome|tema)$/.test(l) ||
+      (/(descrição|descricao|explicação|explicacao|definição|definicao)/i.test(r)&&l.length<30);
+  }
+  if(data.length&&isHeaderRow(data[0]))data.shift();
+  data=data.filter(function(x){return x.label&&x.cells.some(Boolean);});
+  if(data.length<2)return null;
+
+  if(chosen.k===2){
+    return data.map(function(x){return clean(x.label)+". "+clean(x.cells[0])+((/[.!?]$/.test(x.cells[0]))?"":".");}).join(" ");
+  }
+
+  var leftHeader=cols[1][0]?clean(cols[1][0].text):"Primeira coluna";
+  var rightHeader=cols[2][0]?clean(cols[2][0].text):"Segunda coluna";
+  var left=[],right=[];
+  data.forEach(function(x){
+    if(x.cells[0])left.push(clean(x.label)+". "+clean(x.cells[0]));
+    if(x.cells[1])right.push(clean(x.label)+". "+clean(x.cells[1]));
+  });
+  return clean(leftHeader+" "+left.join(". ")+" "+rightHeader+" "+right.join(". "));
+}
 
 function pageText(p,edges){
-  var lines=rawLines(p);
-  if(!lines.length)return "";
-
-  var ys=lines.map(function(l){return l.y;});
-  var top=Math.max.apply(null,ys),bottom=Math.min.apply(null,ys),span=Math.max(1,top-bottom);
-
+  var lines=rawLines(p); if(!lines.length)return "";
+  var table=tableReading(p); if(table)return duplicateClean(repairWords(table));
   var smart="",visual="";
   try{
-    if(typeof window.pageSmartText==="function"){
-      smart=window.pageSmartText(p,"smart")||"";
-      visual=window.pageSmartText(p,"visual")||"";
-    }
+    if(typeof window.pageSmartText==="function"){smart=window.pageSmartText(p,"smart")||"";visual=window.pageSmartText(p,"visual")||"";}
   }catch(e){}
-
-  var base=smart?String(smart).split(/\n+/).map(clean).filter(Boolean):
-            (visual?String(visual).split(/\n+/).map(clean).filter(Boolean):
-            lines.map(function(l){return l.text;}));
-
+  var base=smart?String(smart).split(/\n+/).map(clean).filter(Boolean):(visual?String(visual).split(/\n+/).map(clean).filter(Boolean):lines.map(function(l){return l.text;}));
+  var ys=lines.map(function(l){return l.y;}),top=Math.max.apply(null,ys),bottom=Math.min.apply(null,ys),span=Math.max(1,top-bottom);
   var headerKeys=Object.create(null),footerKeys=Object.create(null);
   lines.forEach(function(l){
-    var fromTop=top-l.y,fromBottom=l.y-bottom,k=key(l.text);
-    if(!k)return;
-
-    // Repeated text near the top is overwhelmingly likely to be a document
-    // header (logo/title/course/author), while repeated bottom text is footer.
-    if(fromTop<span*.18 && edges.top[k]>=2)headerKeys[k]=true;
-    if(fromBottom<span*.18 && edges.bottom[k]>=2)footerKeys[k]=true;
-
-    // Explicit header patterns catch headers that occur only on the current
-    // page or vary slightly from page to page.
-    if(fromTop<span*.15 && /(?:pdf\s+sint[eé]tico|gran\s+concursos?|gran\.com\.br|material\s+(?:resumido|de\s+estudo)|adriel\s+s[aá]|introdu[cç][aã]o\s+.*(?:administr|gest[aã]o))/i.test(l.text)){
-      headerKeys[k]=true;
-    }
-
-    if(fromBottom<span*.18 && isFooter(l.text))footerKeys[k]=true;
+    var fromTop=top-l.y,fromBottom=l.y-bottom,k=key(l.text);if(!k)return;
+    if(fromTop<span*.18&&edges.top[k]>=2)headerKeys[k]=true;
+    if(fromBottom<span*.18&&edges.bottom[k]>=2)footerKeys[k]=true;
+    if(fromTop<span*.16&&/(?:gran\s+concursos?|gran\.com\.br|pdf\s+sint[eé]tico|introdu[cç][aã]o\s+.*administr)/i.test(l.text))headerKeys[k]=true;
+    if(fromBottom<span*.18&&isFooter(l.text))footerKeys[k]=true;
   });
-
   base=base.filter(function(s){
-    s=clean(s);if(!s)return false;
-    var k=key(s);
-    if(headerKeys[k]||footerKeys[k])return false;
-    if(isFooter(s))return false;
-
-    // Smart/table extraction may slightly join adjacent header text. Remove
-    // it when a complete header line is contained in the extracted line.
-    for(var hk in headerKeys){
-      if(hk.length>=8 && (k.indexOf(hk)>=0 || hk.indexOf(k)>=0))return false;
-    }
+    s=clean(s);if(!s)return false;var k=key(s);
+    if(headerKeys[k]||footerKeys[k]||isFooter(s))return false;
+    for(var hk in headerKeys)if(hk.length>=8&&(k.indexOf(hk)>=0||hk.indexOf(k)>=0))return false;
     return true;
   });
-
   var text=base.join(" ");
   text=text.replace(/(?:o conteúdo deste livro eletrônico|todos os direitos reservados|copyright)[^.!?]*(?:[.!?]|$)/gi," ");
-  text=text.replace(/\b\d+\s+de\s+\d+\b/gi," ");
-  text=text.replace(/\bgran\.com\.br\b/gi," ");
-  text=text.replace(/(?:https?:\/\/|www\.)\S+/gi," ");
+  text=text.replace(/\b\d+\s+de\s+\d+\b/gi," ").replace(/\bgran\.com\.br\b/gi," ").replace(/(?:https?:\/\/|www\.)\S+/gi," ");
   return duplicateClean(repairWords(clean(text)));
 }
 
