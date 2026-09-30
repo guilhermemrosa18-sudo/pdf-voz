@@ -317,37 +317,117 @@ function getVoice(){
   return v||state.voices[0]||null;
 }
 
+function setupBackgroundAudio(){
+  try{
+    if("audioSession" in navigator && navigator.audioSession){
+      navigator.audioSession.type="playback";
+    }
+  }catch(e){}
+  if(!window._pdfvozAudio){
+    var audio=document.createElement("audio");
+    audio.preload="auto";
+    audio.playsInline=true;
+    audio.setAttribute("playsinline","");
+    audio.setAttribute("webkit-playsinline","");
+    audio.style.display="none";
+    document.body.appendChild(audio);
+    window._pdfvozAudio=audio;
+  }
+  return window._pdfvozAudio;
+}
+function setMediaSession(item){
+  try{
+    if("mediaSession" in navigator && "MediaMetadata" in window){
+      navigator.mediaSession.metadata=new MediaMetadata({
+        title:"Leitura — "+(els.name.textContent||"PDF"),
+        artist:"PDF Voz",
+        album:"Página "+item.page
+      });
+      navigator.mediaSession.playbackState="playing";
+    }
+  }catch(e){}
+}
+function clearMediaSession(){
+  try{if("mediaSession" in navigator)navigator.mediaSession.playbackState="none";}catch(e){}
+}
+function wavDataInfo(buf){
+  var v=new DataView(buf),p=12;
+  while(p+8<=buf.byteLength){
+    var id=String.fromCharCode(v.getUint8(p),v.getUint8(p+1),v.getUint8(p+2),v.getUint8(p+3));
+    var n=v.getUint32(p+4,true);
+    if(id==="data")return {headerEnd:p+8,dataStart:p+8,dataSize:n,dataSizePos:p+4};
+    p+=8+n+(n&1);
+  }
+  return null;
+}
+async function mergeWavs(blobs){
+  if(blobs.length===1)return blobs[0];
+  var bufs=await Promise.all(blobs.map(function(b){return b.arrayBuffer();}));
+  var first=bufs[0],info=wavDataInfo(first);
+  if(!info)throw new Error("Áudio TTS não retornou WAV válido.");
+  var total=0;
+  var infos=bufs.map(function(buf){
+    var x=wavDataInfo(buf);if(!x)throw new Error("Formato de áudio incompatível.");
+    total+=x.dataSize;return x;
+  });
+  var out=new Uint8Array(first.slice(0,info.dataStart));
+  var merged=new Uint8Array(info.dataStart+total);
+  merged.set(out,0);
+  var pos=info.dataStart;
+  bufs.forEach(function(buf,idx){
+    var x=infos[idx];
+    merged.set(new Uint8Array(buf,x.dataStart,x.dataSize),pos);
+    pos+=x.dataSize;
+  });
+  var dv=new DataView(merged.buffer);
+  dv.setUint32(4,merged.byteLength-8,true);
+  dv.setUint32(info.dataSizePos,total,true);
+  return new Blob([merged],{type:"audio/wav"});
+}
+async function generateAudioBlob(text){
+  if(typeof window.getTransformers!=="function")throw new Error("Motor Supertonic não carregado.");
+  var tts=await window.getTransformers();
+  var parts=splitSpeech(text,420);
+  if(!parts.length)throw new Error("Texto vazio.");
+  var voice=(els.aiVoice&&els.aiVoice.value)||"M1";
+  var speaker="https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/"+encodeURIComponent(voice)+".bin";
+  var blobs=[];
+  for(var i=0;i<parts.length;i++){
+    var output=await tts("<pt>"+parts[i],{
+      speaker_embeddings:speaker,
+      num_inference_steps:6,
+      speed:Math.max(.5,Math.min(2.5,Number(els.speed.value)||1))
+    });
+    var blob=output&&typeof output.toBlob==="function"?await output.toBlob():null;
+    if(!blob)throw new Error("O Supertonic não retornou áudio.");
+    blobs.push(blob);
+  }
+  return mergeWavs(blobs);
+}
 function stop(){
   readingRun++;
   queue=[];queuePos=0;currentPage=0;
   try{speechSynthesis.cancel();}catch(e){}
-  state.speaking=false;state.paused=false;state.utterance=null;
+  try{
+    var audio=window._pdfvozAudio;
+    if(audio){audio.pause();audio.removeAttribute("src");audio.load();}
+  }catch(e){}
+  state.speaking=false;state.paused=false;state.utterance=null;state.aiAudio=null;
+  clearMediaSession();
   if(els.play)els.play.textContent="▶ Ler";
 }
-
-// iOS/Safari may suspend speech synthesis when the page is backgrounded.
-// Keep the utterance alive and request a resume whenever the document returns
-// from the background. This is best-effort for the device's native TTS.
 var bgResumeTimer=null;
 function resumeBackgroundSpeech(){
   if(!state.speaking)return;
   try{
-    if(typeof speechSynthesis!=="undefined"){
-      if(state.paused===false) speechSynthesis.resume();
-      if(!speechSynthesis.speaking && !speechSynthesis.pending && state.utterance){
-        speechSynthesis.speak(state.utterance);
-      }
-    }
+    var audio=window._pdfvozAudio;
+    if(audio && audio.paused && audio.src && state.paused===false)audio.play().catch(function(){});
   }catch(e){}
 }
 document.addEventListener("visibilitychange",function(){
   if(document.visibilityState==="visible"){
     clearTimeout(bgResumeTimer);
     bgResumeTimer=setTimeout(resumeBackgroundSpeech,120);
-  }else if(state.speaking){
-    // Do not call pause/cancel when minimizing or locking the screen.
-    clearTimeout(bgResumeTimer);
-    bgResumeTimer=setTimeout(resumeBackgroundSpeech,250);
   }
 });
 window.addEventListener("pageshow",function(){setTimeout(resumeBackgroundSpeech,100);});
@@ -358,80 +438,87 @@ window.speakFromPage=function(){
   stop();
   var start=Math.max(1,Math.min(Number(els.startPage.value)||state.page,state.pdf.numPages));
   state.readStartPage=start;
-  
-  // Prepare only the first page synchronously so the first speech call remains
-  // directly inside the user's click and is not blocked by a large 111-page scan.
   queue=buildPageQueue(start-1);
-  queuePos=0;
-  currentPage=start;
+  queuePos=0;currentPage=start;
   if(!queue.length){toast("Não encontrei texto principal nesta página.");return;}
-  
   state.speaking=true;state.paused=false;
   els.play.textContent="⏸ Pausar";
   els.pdfTab.classList.add("active");els.textTab.classList.remove("active");
   els.stage.hidden=false;els.text.hidden=true;
-  
+  setupBackgroundAudio();
   readingRun++;
-  var my=readingRun;
-  speakNext(my);
+  speakNext(readingRun);
 };
 
-function speakNext(my){
+async function speakNext(my){
   if(my!==readingRun||!state.speaking)return;
-  
   if(queuePos>=queue.length){
     var nextPage=currentPage+1;
     if(nextPage>state.pdf.numPages){
       state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";
-      toast("Leitura concluída.");return;
+      clearMediaSession();toast("Leitura concluída.");return;
     }
-    currentPage=nextPage;
-    queue=buildPageQueue(nextPage-1);
-    queuePos=0;
+    currentPage=nextPage;queue=buildPageQueue(nextPage-1);queuePos=0;
     if(!queue.length){speakNext(my);return;}
   }
-  
   var item=queue[queuePos++];
   els.now.textContent=els.name.textContent+" — página "+item.page;
   var pct=Math.round(((item.page-1)/Math.max(1,state.pdf.numPages))*100);
-  els.pct.textContent=pct+"%";
-  els.fill.style.width=pct+"%";
+  els.pct.textContent=pct+"%";els.fill.style.width=pct+"%";
   els.sent.textContent=item.page+" / "+state.pdf.numPages;
   if(state.page!==item.page)renderPage(item.page);
-  
+
+  // Real media playback instead of speechSynthesis: this is the path that can
+  // continue when iOS locks the screen/backgrounds Safari.
+  if(els.voiceEngine.value==="transformers"){
+    try{
+      toast("Gerando áudio da página "+item.page+"…");
+      var blob=await generateAudioBlob(item.text);
+      if(my!==readingRun||!state.speaking)return;
+      var audio=setupBackgroundAudio();
+      var url=URL.createObjectURL(blob);
+      if(audio._pdfvozUrl)URL.revokeObjectURL(audio._pdfvozUrl);
+      audio._pdfvozUrl=url;
+      audio.src=url;
+      audio.load();
+      setMediaSession(item);
+      await new Promise(function(resolve,reject){
+        audio.onended=function(){resolve();};
+        audio.onerror=function(){reject(new Error("Falha ao reproduzir o áudio."));};
+        audio.onpause=function(){
+          if(state.paused||!state.speaking)return;
+        };
+        audio.play().then(function(){
+          toast("Lendo página "+item.page+"…");
+        }).catch(reject);
+      });
+      if(my===readingRun&&state.speaking){
+        URL.revokeObjectURL(url);audio._pdfvozUrl=null;
+        setTimeout(function(){speakNext(my);},0);
+      }
+      return;
+    }catch(e){
+      if(my!==readingRun||!state.speaking)return;
+      state.speaking=false;els.play.textContent="▶ Ler";clearMediaSession();
+      toast("Não foi possível reproduzir a voz IA: "+(e&&e.message||"erro"));
+      return;
+    }
+  }
+
   if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)){
     state.speaking=false;els.play.textContent="▶ Ler";
-    toast("Este navegador não disponibilizou a leitura por voz.");
-    return;
+    toast("Este navegador não disponibilizou a leitura por voz.");return;
   }
-  var v=getVoice();
-  var u=new SpeechSynthesisUtterance(item.text);
+  var v=getVoice(),u=new SpeechSynthesisUtterance(item.text);
   if(v){u.voice=v;u.lang=v.lang||"pt-BR";}else u.lang="pt-BR";
-  u.rate=Math.max(.6,Math.min(1.8,Number(els.speed.value)||1));
-  u.pitch=1;u.volume=1;state.utterance=u;
-  var started=false;
-  u.onstart=function(){started=true;toast("Lendo página "+item.page+"…");};
-  u.onend=function(){if(my===readingRun){setTimeout(function(){speakNext(my);},0);}};
+  u.rate=Math.max(.6,Math.min(1.8,Number(els.speed.value)||1));u.pitch=1;u.volume=1;state.utterance=u;
+  u.onstart=function(){toast("Lendo página "+item.page+"…");};
+  u.onend=function(){if(my===readingRun)setTimeout(function(){speakNext(my);},0);};
   u.onerror=function(ev){
     if(my!==readingRun||ev.error==="canceled"||ev.error==="interrupted")return;
-    state.speaking=false;els.play.textContent="▶ Ler";
-    toast("A voz do PC não iniciou: "+(ev.error||"erro desconhecido"));
+    state.speaking=false;els.play.textContent="▶ Ler";toast("A voz do dispositivo não iniciou.");
   };
-  
-  try{
-    speechSynthesis.speak(u);
-    setTimeout(function(){
-      if(my!==readingRun||started||!state.speaking)return;
-      if(!speechSynthesis.speaking&&!speechSynthesis.pending){
-        // Opera/Chromium can occasionally drop a single utterance. Retry the same
-        // utterance once without clearing the queue.
-        try{speechSynthesis.speak(u);}catch(e){}
-      }
-    },700);
-  }catch(e){
-    state.speaking=false;els.play.textContent="▶ Ler";
-    toast("Erro ao iniciar a voz: "+(e&&e.message||"erro"));
-  }
+  try{speechSynthesis.speak(u);}catch(e){state.speaking=false;els.play.textContent="▶ Ler";toast("Erro ao iniciar a voz.");}
 }
 
 els.play.onclick=function(){
