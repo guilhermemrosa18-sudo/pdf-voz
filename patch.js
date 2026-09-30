@@ -78,26 +78,65 @@ function numWords(m) {
 
 function expand0(t) {
   t = t.replace(ABBR_RE, function (m, pre, ab) {
-    var v = ABBR[ab.toLowerCase()]; if (!v) return m;
-    if (ab.charAt(0) !== ab.charAt(0).toLowerCase()) v = v.charAt(0).toUpperCase() + v.slice(1);
-    return pre + v;
+    var v = ABBR[ab.toLowerCase()];
+    return v ? pre + v : m;
   });
-  return t
-    .replace(/US\$\s*([\d.]+(?:,\d+)?)/g, '$1 dólares')
-    .replace(/R\$\s*([\d.]+(?:,\d+)?)/g, '$1 reais')
-    .replace(/(\d),00\b/g, '$1')
-    .replace(/(\d)\.(?=\d{3}(?!\d))/g, '$1')            // 1.500 -> 1500
-    .replace(/(\d)\s*%/g, '$1 por cento')
-    .replace(/(\d)\s*km\b/g, '$1 quilômetros')
-    .replace(/(\d)\s*kg\b/g, '$1 quilos')
-    .replace(/(\d)\s*m²/g, '$1 metros quadrados')
-    .replace(/(\d)\s*°\s*C\b/g, '$1 graus Celsius')
-    .replace(/\bn(?:\.\s*|\.?\s?[º°]\s*)(?=\d)/gi, 'número ')
-    .replace(/\b(\d{1,2})º/g, function (m, n) { return ORD[+n] || n; })
-    .replace(/\b(\d{1,2})ª/g, function (m, n) { return ORDF[+n] || n; })
-    .replace(/(\d)\.(?=\d)/g, '$1 ponto ')
-    .replace(/\d+(?:,\d+)?/g, numWords)
-    .replace(SIGLA_RE, function (m) { return SIGLAS[m]; });
+
+  /* Datas: 29/09/2026 -> vinte e nove de setembro de dois mil e vinte e seis. */
+  t = t.replace(/\\b(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})\\b/g,function(m,d,mo,y){
+    return extenso(+d)+' de '+(MESES[+mo-1]||mo)+' de '+extenso(+y);
+  });
+
+  /* Valores monetários: 1.234,56 -> mil duzentos e trinta e quatro reais e cinquenta e seis centavos. */
+  function money(m,currency){
+    var raw=m.replace(/[^\\d,.-]/g,'');
+    var neg=/^-/.test(raw), s=raw.replace(/^-/,''), parts=s.split(','), whole=parts[0].replace(/\\./g,''), cents=parts[1]||'';
+    var w=whole?extenso(+whole):'zero';
+    if(cents){
+      cents=(cents+'00').slice(0,2);
+      w+=' e '+extenso(+cents)+' centavos';
+    }
+    return (neg?'menos ':'')+w+' '+currency;
+  }
+  t=t.replace(/R\\$\\s*[\\d.]+(?:,\\d{1,2})?/g,function(m){return money(m,'reais');});
+  t=t.replace(/US\\$\\s*[\\d.]+(?:,\\d{1,2})?/g,function(m){return money(m,'dólares');});
+
+  /* Percentuais e unidades comuns. */
+  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*%/g,function(m,n){return numberPhrase(n)+' por cento';});
+  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*km\\b/gi,function(m,n){return numberPhrase(n)+' quilômetros';});
+  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*kg\\b/gi,function(m,n){return numberPhrase(n)+' quilos';});
+  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*m²/gi,function(m,n){return numberPhrase(n)+' metros quadrados';});
+  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*°\\s*C\\b/gi,function(m,n){return numberPhrase(n)+' graus Celsius';});
+
+  /* Artigos/incisos ordinais. */
+  t=t.replace(/\\b(\\d{1,2})º\\b/g,function(m,n){return ORD[+n]||numberPhrase(n);});
+  t=t.replace(/\\b(\\d{1,2})ª\\b/g,function(m,n){return ORDF[+n]||numberPhrase(n);});
+
+  /* Frações/leis como 8.080/1990: mantém a relação "de". */
+  t=t.replace(/\\b(\\d[\\d.]{1,})\\/(\\d{4})\\b/g,function(m,a,b){
+    return numberPhrase(a)+' de '+numberPhrase(b);
+  });
+
+  /* Decimais com vírgula. Milhares com ponto. Inteiros grandes/identificadores viram dígitos. */
+  t=t.replace(/\\b\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?\\b/g,function(m){
+    return numberPhrase(m);
+  });
+  t=t.replace(/\\b\\d+,\\d+\\b/g,function(m){return numberPhrase(m);});
+  t=t.replace(/\\b\\d{1,9}\\b/g,function(m){return numberPhrase(m);});
+  t=t.replace(SIGLA_RE,function(m){return SIGLAS[m.toUpperCase()]||m;});
+  return t;
+}
+function numberPhrase(token){
+  var raw=String(token).replace(/\\s/g,'');
+  var normalized=raw.replace(/\\./g,'').replace(',', '.');
+  if(/^-?\\d+\\.\\d+$/.test(normalized)){
+    var pp=normalized.split('.');
+    return (pp[0] ? extenso(+pp[0]) : 'zero')+' vírgula '+(pp[1].length>3?digitos(pp[1]):extenso(+pp[1]));
+  }
+  var int=raw.replace(/\\./g,'');
+  if(/^\\d{1,7}$/.test(int)) return extenso(+int);
+  if(/^\\d+$/.test(int)) return digitos(int);
+  return raw;
 }
 
 var MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -132,11 +171,30 @@ function cleanEnd(t) {
 }
 function expand(t) { return cleanEnd(expand0(norm(t))); }
 
+function bboxOverlap(a,b){
+  var ax1=a.x, ay1=a.y, ax2=a.x+a.w, ay2=a.y+a.h;
+  var bx1=b.x, by1=b.y, bx2=b.x+b.w, by2=b.y+b.h;
+  var ix=Math.max(0,Math.min(ax2,bx2)-Math.max(ax1,bx1));
+  var iy=Math.max(0,Math.min(ay2,by2)-Math.max(ay1,by1));
+  var inter=ix*iy, aa=Math.max(1,(ax2-ax1)*(ay2-ay1)), bb=Math.max(1,(bx2-bx1)*(by2-by1));
+  return inter/Math.min(aa,bb);
+}
 function dedupe(items) {
-  var seen = {}, out = [];
-  items.forEach(function (it) {
-    var k = it.str + '|' + Math.round(it.x / 2) + '|' + Math.round(it.y / 2);
-    if (seen[k]) return; seen[k] = 1; out.push(it);
+  var seen = Object.create(null), out = [];
+  items.forEach(function(it){
+    var txt=String(it.str||'').replace(/\\s+/g,' ').trim();
+    if(!txt)return;
+    var k=txt.toLowerCase()+'|'+Math.round(it.x/3)+'|'+Math.round(it.y/3);
+    if(seen[k])return;
+    var duplicate=false;
+    for(var j=Math.max(0,out.length-80);j<out.length;j++){
+      var prev=out[j];
+      if(prev.str.toLowerCase()===txt.toLowerCase() &&
+         Math.abs(prev.y-it.y)<=Math.max(3,prev.h,it.h) &&
+         bboxOverlap(prev,it)>=0.55){duplicate=true;break;}
+    }
+    if(duplicate)return;
+    seen[k]=1; out.push(it);
   });
   return out;
 }
@@ -146,8 +204,15 @@ var curList = null, curC = null, curW = null, view = { list: null, page: 0 };
 function pageSents(p, mode) {
   var it = state.layoutPages[p];
   if (it && !it.__d) { it = state.layoutPages[p] = dedupe(it); it.__d = 1; }
-  var lines = (pageSmartText(p, mode) || '').split('\n')
-    .map(function (l) { return l.trim(); }).filter(Boolean);
+  var rawLines = (pageSmartText(p, mode) || '').split('\n').map(function(l){return l.trim();}).filter(Boolean);
+  var lines = [];
+  rawLines.forEach(function(l){
+    var prev=lines[lines.length-1]||'';
+    var a=l.toLowerCase().replace(/[^a-zà-ÿ0-9]+/g,' ');
+    var b=prev.toLowerCase().replace(/[^a-zà-ÿ0-9]+/g,' ');
+    if(a && a===b)return;
+    lines.push(l);
+  });
   if (!lines.length) return [];
   var t = '';
   lines.forEach(function (l, k) {
@@ -222,13 +287,17 @@ css.textContent = '.pv-c.on{background:rgba(119,92,255,.18);border-radius:4px}.p
 document.head.appendChild(css);
 
 /* Marcação diretamente sobre a página PDF. */
-css.textContent += '.pv-pdf-overlay{position:absolute;pointer-events:none;z-index:20;overflow:visible}.pv-pdf-word{position:absolute;background:rgba(255,214,60,.7);border:1px solid rgba(210,150,0,.55);border-radius:3px;box-shadow:0 0 0 2px rgba(255,214,60,.2);pointer-events:none}';
+css.textContent += '.pv-pdf-wrap{position:relative;display:inline-block;line-height:0}.pv-pdf-wrap .pv-pdf-overlay{position:absolute;left:0;top:0;pointer-events:none;z-index:50;overflow:visible}.pv-pdf-word{position:absolute;background:rgba(255,214,60,.74);border:1px solid rgba(190,145,0,.55);border-radius:3px;box-shadow:0 1px 6px rgba(0,0,0,.18)}';
 document.head.appendChild(css);
 
+var pdfWrap=document.createElement('div');
+pdfWrap.className='pv-pdf-wrap';
+els.stage.insertBefore(pdfWrap,els.canvas);
+pdfWrap.appendChild(els.canvas);
 var pdfOverlay=document.createElement('div');
 pdfOverlay.className='pv-pdf-overlay';
 pdfOverlay.setAttribute('aria-hidden','true');
-els.stage.appendChild(pdfOverlay);
+pdfWrap.appendChild(pdfOverlay);
 var pdfWordsCache=Object.create(null), pdfLastKey='';
 
 function overlayLines(items){
@@ -278,9 +347,10 @@ function overlayWordBoxes(pageIndex){
   pdfWordsCache[pageIndex]=words;return words;
 }
 function placePdfOverlay(){
-  var r=els.canvas.getBoundingClientRect(),s=els.stage.getBoundingClientRect();
-  pdfOverlay.style.left=(r.left-s.left+els.stage.scrollLeft)+'px';
-  pdfOverlay.style.top=(r.top-s.top+els.stage.scrollTop)+'px';
+  pdfWrap.style.width=els.canvas.clientWidth+'px';
+  pdfWrap.style.height=els.canvas.clientHeight+'px';
+  pdfOverlay.style.left='0';
+  pdfOverlay.style.top='0';
   pdfOverlay.style.width=els.canvas.clientWidth+'px';
   pdfOverlay.style.height=els.canvas.clientHeight+'px';
 }
@@ -306,7 +376,10 @@ async function markPdfWord(c,wi){
   hi.style.width=Math.max(5,(target.x1-target.x0)*sx+2)+'px';
   hi.style.height=Math.max(9,(target.y1-target.y0)*sy+2)+'px';
   pdfOverlay.appendChild(hi);
-  try{hi.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'});}catch(e){}
+  if(!hi.offsetWidth || !hi.offsetHeight){
+    hi.style.left='8px';hi.style.top='8px';hi.style.width='60px';hi.style.height='18px';
+  }
+  try{pdfWrap.scrollIntoView({block:'center',inline:'nearest',behavior:'smooth'});}catch(e){}
 }
   if (!c.w) { c.w = []; c.text.replace(/\S+/g, function (w, o) { c.w.push({ s: o, e: o + w.length }); return w; }); }
   return c.w;
@@ -336,7 +409,6 @@ function draw(list, i) {
 function mark(list,i,wi){
   var c=list[i];
   if(!c)return;
-  /* A marcação de acompanhamento fica somente sobre o PDF. */
   markPdfWord(c,wi);
 }
 
@@ -478,6 +550,7 @@ window.stopSpeech = function () {
   if (shared) { try { shared.pause(); } catch (e) {} }
   if (endPlay) endPlay();
   state.speaking = false; state.paused = false; els.play.textContent = '▶ Ler';
+  clearPdfHighlight();
 };
 window.speakFromPage = function () {
   if (!state.pdf) { toast('Abra um PDF primeiro.'); return; }
