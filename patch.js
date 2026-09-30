@@ -328,7 +328,16 @@ function setupBackgroundAudio(){
     audio.setAttribute("playsinline","");
     audio.setAttribute("webkit-playsinline","");
     audio.controls=false;
-    audio.style.display="none";
+    // Não use display:none: no iOS, manter o elemento de mídia "vivo"
+    // ajuda o WebKit a tratá-lo como uma reprodução real em segundo plano.
+    audio.style.position="fixed";
+    audio.style.width="1px";
+    audio.style.height="1px";
+    audio.style.opacity="0.001";
+    audio.style.pointerEvents="none";
+    audio.style.left="-2px";
+    audio.style.bottom="-2px";
+    audio.setAttribute("aria-hidden","true");
     document.body.appendChild(audio);
     window._pdfvozAudio=audio;
   }
@@ -342,7 +351,6 @@ function setMediaSession(){
         artist:"PDF Voz",
         album:els.name.textContent||"PDF"
       });
-      navigator.mediaSession.playbackState="playing";
       var audio=setupBackgroundAudio();
       var actions={
         play:function(){audio.play().catch(function(){});state.paused=false;els.play.textContent="⏸ Pausar";},
@@ -503,12 +511,47 @@ function stop(){
   }catch(e){}
   window._pdfvozPages=null;
   state.speaking=false;state.paused=false;state.utterance=null;state.aiAudio=null;
+  preparingAudio=false;
+  releaseWakeLock();
   clearMediaSession();
   if(els.play)els.play.textContent="▶ Ler";
 }
 window.stopSpeech=stop;
 
 var audioProgressTimer=null;
+var wakeLock=null;
+var preparingAudio=false;
+
+async function acquireWakeLock(){
+  try{
+    if("wakeLock" in navigator && navigator.wakeLock && !wakeLock){
+      wakeLock=await navigator.wakeLock.request("screen");
+      wakeLock.addEventListener("release",function(){wakeLock=null;});
+    }
+  }catch(e){}
+}
+async function releaseWakeLock(){
+  try{if(wakeLock){await wakeLock.release();wakeLock=null;}}catch(e){wakeLock=null;}
+}
+document.addEventListener("visibilitychange",function(){
+  if(document.visibilityState==="visible" && state.speaking && window._pdfvozAudio){
+    // Depois de voltar do bloqueio/central de controle, reconecta a sessão
+    // e tenta continuar somente se o áudio já estava preparado.
+    if(!preparingAudio && window._pdfvozAudio.src && window._pdfvozAudio.paused){
+      window._pdfvozAudio.play().then(function(){
+        state.paused=false;
+        els.play.textContent="⏸ Pausar";
+        setMediaSession();
+      }).catch(function(){});
+    }
+  }
+});
+window.addEventListener("pageshow",function(){
+  if(state.speaking && !preparingAudio && window._pdfvozAudio && window._pdfvozAudio.src){
+    window._pdfvozAudio.play().catch(function(){});
+  }
+});
+
 function startAudioProgress(){
   clearInterval(audioProgressTimer);
   audioProgressTimer=setInterval(function(){
@@ -535,14 +578,38 @@ window.speakFromPage=async function(){
 
   if(els.voiceEngine.value==="transformers"){
     try{
-      toast("Preparando o áudio completo para segundo plano…");
+      preparingAudio=true;
+      await acquireWakeLock();
+      toast("Preparando a leitura completa. Mantenha o app aberto até aparecer “Áudio pronto”.");
       var prepared=await generateWholeReading(start,my);
       if(my!==readingRun||!state.speaking)return;
       window._pdfvozPages=prepared.pages;
+      await releaseWakeLock();
+      preparingAudio=false;
+      toast("Áudio pronto. Agora a leitura pode continuar com a tela bloqueada.");
       var url=URL.createObjectURL(prepared.blob);
       audio._pdfvozUrl=url;
       audio.src=url;
       audio.load();
+
+      // Aguarda o elemento de mídia carregar o arquivo inteiro antes de
+      // iniciar. Assim o iPhone não precisa depender de JavaScript para
+      // montar o próximo trecho depois que a tela for bloqueada.
+      await new Promise(function(resolve,reject){
+        var done=false;
+        var ok=function(){if(done)return;done=true;cleanup();resolve();};
+        var fail=function(){if(done)return;done=true;cleanup();reject(new Error("O áudio não pôde ser carregado."));};
+        var cleanup=function(){
+          audio.removeEventListener("loadedmetadata",ok);
+          audio.removeEventListener("canplay",ok);
+          audio.removeEventListener("error",fail);
+        };
+        audio.addEventListener("loadedmetadata",ok,{once:true});
+        audio.addEventListener("canplay",ok,{once:true});
+        audio.addEventListener("error",fail,{once:true});
+        if(audio.readyState>=1)ok();
+      });
+
       audio.onended=function(){
         if(my!==readingRun)return;
         state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";
@@ -559,13 +626,16 @@ window.speakFromPage=async function(){
       startAudioProgress();
       try{
         await audio.play();
-        toast("Lendo em segundo plano. Pode bloquear a tela.");
+        if("mediaSession" in navigator)navigator.mediaSession.playbackState="playing";
+        toast("Lendo. Agora você pode bloquear a tela.");
       }catch(e){
         state.paused=true;els.play.textContent="▶ Continuar";
         toast("O navegador bloqueou o início automático. Toque em ▶ Continuar.");
       }
       return;
     }catch(e){
+      await releaseWakeLock();
+      preparingAudio=false;
       if(my!==readingRun)return;
       state.speaking=false;els.play.textContent="▶ Ler";stopAudioProgress();clearMediaSession();
       toast("Não foi possível preparar a voz IA: "+(e&&e.message||"erro"));
