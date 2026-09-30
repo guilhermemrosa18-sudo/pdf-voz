@@ -122,8 +122,15 @@ function prefSet(name,value){
 
 
 function toast(msg){els.notice.textContent=msg}
-function save(){if(state.pdf)prefSet('progress',JSON.stringify({page:state.page,readStartPage:state.readStartPage,file:els.name.textContent}))}
-function loadSaved(){try{return JSON.parse(prefGet('progress','null')||'null')}catch{return null}}
+function fileKey(){
+  return (els.name.textContent||'PDF').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').slice(0,140);
+}
+function save(){
+  if(state.pdf)prefSet('progress:'+fileKey(),JSON.stringify({page:state.page,readStartPage:state.readStartPage}));
+}
+function loadSaved(){
+  try{return JSON.parse(prefGet('progress:'+fileKey(),'null')||'null')}catch{return null}
+}
 function fillVoices(){
   state.voices=(speechSynthesis.getVoices()||[]).slice().sort((a,b)=>a.lang.localeCompare(b.lang)||a.name.localeCompare(b.name));
   els.voice.innerHTML='';
