@@ -64,7 +64,13 @@ function rawLines(p){
       }
       prev=it;
     });
-    return {y:line.y,minX:Math.min.apply(null,line.items.map(function(x){return Number(x.x||0);})),text:repairWords(out)};
+    return {
+      y:line.y,
+      h:Math.max.apply(null,line.items.map(function(x){return Math.abs(Number(x.h||10));})),
+      minX:Math.min.apply(null,line.items.map(function(x){return Number(x.x||0);})),
+      maxX:Math.max.apply(null,line.items.map(function(x){return Number(x.x||0)+Number(x.w||0);})),
+      text:repairWords(out)
+    };
   }).filter(function(l){return l.text;});
 }
 
@@ -77,54 +83,80 @@ function isFooter(s){
     /^(?:©|copyright|todos os direitos|o conteúdo deste livro|este conteúdo|proibida a reprodução)/i.test(s);
 }
 
-function pageText(p){
+function edgeCounts(){
+  var top=Object.create(null),bottom=Object.create(null);
+  for(var p=0;p<state.pdf.numPages;p++){
+    var lines=rawLines(p);
+    if(!lines.length)continue;
+    var ys=lines.map(function(l){return l.y;});
+    var hi=Math.max.apply(null,ys),lo=Math.min.apply(null,ys),span=Math.max(1,hi-lo);
+    lines.forEach(function(l){
+      var k=key(l.text);if(!k)return;
+      if(hi-l.y<span*.18)top[k]=(top[k]||0)+1;
+      if(l.y-lo<span*.18)bottom[k]=(bottom[k]||0)+1;
+    });
+  }
+  return {top:top,bottom:bottom};
+}
+
+function pageText(p,edges){
   var lines=rawLines(p);
   if(!lines.length)return "";
-  
-  // Use the existing PDF layout engine for actual column/table pages.
-  var source=state.layoutPages[p]||[];
-  var base=[];
-  try{
-    var smart=(typeof window.pageSmartText==="function")?window.pageSmartText(p,"smart"):"";
-    var visual=(typeof window.pageSmartText==="function")?window.pageSmartText(p,"visual"):"";
-    if(smart && /(?:organiza(?:ções|coes)|comunica(?:ção|cao)|tradicionais|modernas)/i.test(smart) &&
-       /(?:organiza(?:ções|coes)|tradicionais|modernas)/i.test(smart)){
-      base=String(smart).split(/\n+/).map(clean).filter(Boolean);
-    }else{
-      base=lines.map(function(l){return l.text;});
-    }
-    if(!base.length)base=visual?String(visual).split(/\n+/).map(clean).filter(Boolean):lines.map(function(l){return l.text;});
-  }catch(e){
-    base=lines.map(function(l){return l.text;});
-  }
-  
+
   var ys=lines.map(function(l){return l.y;});
-  var top=ys.length?Math.max.apply(null,ys):0;
-  var bottom=ys.length?Math.min.apply(null,ys):0;
-  var span=Math.max(1,top-bottom);
-  
-  // Build a map of exact line text so footer filtering can be applied without
-  // destroying legitimate body text.
-  var kept=[];
-  lines.forEach(function(l,i){
-    var bottomZone=(l.y-bottom)<span*.10;
-    if(bottomZone && isFooter(l.text))return;
-    if(isFooter(l.text))return;
-    kept.push(l.text);
-  });
-  
-  var footerKeys=Object.create(null);
+  var top=Math.max.apply(null,ys),bottom=Math.min.apply(null,ys),span=Math.max(1,top-bottom);
+
+  var smart="",visual="";
+  try{
+    if(typeof window.pageSmartText==="function"){
+      smart=window.pageSmartText(p,"smart")||"";
+      visual=window.pageSmartText(p,"visual")||"";
+    }
+  }catch(e){}
+
+  var base=smart?String(smart).split(/\n+/).map(clean).filter(Boolean):
+            (visual?String(visual).split(/\n+/).map(clean).filter(Boolean):
+            lines.map(function(l){return l.text;}));
+
+  var headerKeys=Object.create(null),footerKeys=Object.create(null);
   lines.forEach(function(l){
-    var bottomZone=(l.y-bottom)<span*.10;
-    if(isFooter(l.text)||bottomZone)footerKeys[key(l.text)]=true;
+    var fromTop=top-l.y,fromBottom=l.y-bottom,k=key(l.text);
+    if(!k)return;
+
+    // Repeated text near the top is overwhelmingly likely to be a document
+    // header (logo/title/course/author), while repeated bottom text is footer.
+    if(fromTop<span*.18 && edges.top[k]>=2)headerKeys[k]=true;
+    if(fromBottom<span*.18 && edges.bottom[k]>=2)footerKeys[k]=true;
+
+    // Explicit header patterns catch headers that occur only on the current
+    // page or vary slightly from page to page.
+    if(fromTop<span*.15 && /(?:pdf\s+sint[eé]tico|gran\s+concursos?|gran\.com\.br|material\s+(?:resumido|de\s+estudo)|adriel\s+s[aá]|introdu[cç][aã]o\s+.*(?:administr|gest[aã]o))/i.test(l.text)){
+      headerKeys[k]=true;
+    }
+
+    if(fromBottom<span*.18 && isFooter(l.text))footerKeys[k]=true;
   });
-  base=base.filter(function(s){return !footerKeys[key(s)];});
-  var text=base.length?base.join(" "):kept.join(" ");
+
+  base=base.filter(function(s){
+    s=clean(s);if(!s)return false;
+    var k=key(s);
+    if(headerKeys[k]||footerKeys[k])return false;
+    if(isFooter(s))return false;
+
+    // Smart/table extraction may slightly join adjacent header text. Remove
+    // it when a complete header line is contained in the extracted line.
+    for(var hk in headerKeys){
+      if(hk.length>=8 && (k.indexOf(hk)>=0 || hk.indexOf(k)>=0))return false;
+    }
+    return true;
+  });
+
+  var text=base.join(" ");
+  text=text.replace(/(?:o conteúdo deste livro eletrônico|todos os direitos reservados|copyright)[^.!?]*(?:[.!?]|$)/gi," ");
   text=text.replace(/\b\d+\s+de\s+\d+\b/gi," ");
   text=text.replace(/\bgran\.com\.br\b/gi," ");
   text=text.replace(/(?:https?:\/\/|www\.)\S+/gi," ");
-  text=text.replace(/(?:o conteúdo deste livro eletrônico|todos os direitos reservados)[^.!?]*(?:[.!?]|$)/gi," ");
-  return duplicateClean(repairWords(text));
+  return duplicateClean(repairWords(clean(text)));
 }
 
 function speechText(s){
@@ -161,8 +193,15 @@ function splitSpeech(s,max){
   return out;
 }
 
+var cachedEdges=null,cachedEdgeToken=0;
+function getEdges(){
+  if(cachedEdges&&cachedEdgeToken===state.fileToken)return cachedEdges;
+  cachedEdges=edgeCounts();
+  cachedEdgeToken=state.fileToken;
+  return cachedEdges;
+}
 function buildPageQueue(p){
-  var text=speechText(pageText(p));
+  var text=speechText(pageText(p,getEdges()));
   return splitSpeech(text,650).map(function(x){return {text:x,page:p+1};});
 }
 
