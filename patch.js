@@ -32,14 +32,15 @@ function readablePage(p,count){
 function speechText(s){
   s=clean(s).replace(/(?:https?:\/\/|www\.)\S+/gi," ").replace(/\b[-\w]+\.com\.br\b/gi," ");
   s=s.replace(/\bLei\s+n[ºo°]?\.?\s*8\.080\s*\/\s*1990\b/gi,"Lei número oito mil e oitenta, de mil novecentos e noventa");
-  s=s.replace(/\b8\.080\s*\/\s*1990\b/g,"oito mil e oitenta, de mil novecentos e noventa");
+  s=s.replace(/\b8[.]?080\s*\/\s*1990\b/g,"oito mil e oitenta, de mil novecentos e noventa");
+  s=s.replace(/\bLei\s+n[ºo°]?\.?\s*8[.]?080\b/gi,"Lei número oito mil e oitenta");
   s=s.replace(/\bSUS\b/g,"Sistema Único de Saúde");
   s=s.replace(/\bPDF\b/g,"P D F").replace(/\bSTF\b/g,"S T F").replace(/\bSTJ\b/g,"S T J");
   s=s.replace(/\bCLT\b/g,"C L T").replace(/\bINSS\b/g,"I N S S").replace(/\bFGTS\b/g,"F G T S");
-  s=s.replace(/\barts?\.\b/gi,function(m){return m.toLowerCase().indexOf("arts")===0?"artigos ":"artigo ";});
-  s=s.replace(/\bincs?\.\b/gi,function(m){return m.toLowerCase().indexOf("incs")===0?"incisos ":"inciso ";});
+  s=s.replace(/\barts?\.\s*/gi,function(m){return m.toLowerCase().indexOf("arts")===0?"artigos ":"artigo ";});
+  s=s.replace(/\bincs?\.\s*/gi,function(m){return m.toLowerCase().indexOf("incs")===0?"incisos ":"inciso ";});
   s=s.replace(/\bpar\.\b/gi,"parágrafo ").replace(/\bcap\.\b/gi,"capítulo ");
-  s=s.replace(/\bprofa?\.\b/gi,function(m){return m.toLowerCase().indexOf("profa")===0?"professora ":"professor ";});
+  s=s.replace(/\bprofa?\.\s*/gi,function(m){return m.toLowerCase().indexOf("profa")===0?"professora ":"professor ";});
   s=s.replace(/\bn[ºo°]\.?\s*/gi,"número ").replace(/\bn\.\s*(?=\d)/gi,"número ");
   s=s.replace(/§+/g," parágrafo ");
   s=s.replace(/(\d+(?:[.,]\d+)?)\s*%/g,"$1 por cento");
