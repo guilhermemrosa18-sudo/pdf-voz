@@ -288,7 +288,7 @@ function clearPdfHighlight(){pdfLastKey='';pdfOverlay.textContent='';}
 async function markPdfWord(c,wi){
   if(!state.pdf||!c)return;
   var pg=c.page-1;
-  if(state.page!==c.page){try{await renderPage(c.page);}catch(e){}}
+  if(state.page!==c.page){clearPdfHighlight();try{await renderPage(c.page);}catch(e){}}
   if(state.page!==c.page)return;
   var words=overlayWordBoxes(pg);
   if(!words.length||!c.pageWordTotal)return;
@@ -334,16 +334,10 @@ function draw(list, i) {
   els.text.appendChild(frag);
 }
 function mark(list,i,wi){
-  draw(list,i);
   var c=list[i];
+  if(!c)return;
+  /* A marcação de acompanhamento fica somente sobre o PDF. */
   markPdfWord(c,wi);
-  if (curC !== c) {
-    if (curC && curC.box) curC.box.classList.remove('on');
-    if (c.box) { c.box.classList.add('on'); if (c.box.scrollIntoView) c.box.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
-    curC = c;
-  }
-  var w = c.ws && c.ws[wi];
-  if (w !== curW) { if (curW) curW.classList.remove('on'); if (w) w.classList.add('on'); curW = w; }
 }
 
 /* ---------- voz do dispositivo ---------- */
@@ -495,7 +489,7 @@ window.speakFromPage = function () {
   var list = []; curList = list; curC = curW = null; view.list = null;
   fill(list, start, mode, ai);                       // prepara so a 1a pagina agora; o resto vem em segundo plano
   state.speaking = true; state.paused = false; els.play.textContent = '⏸ Pausar'; save();
-  if (!els.text.hidden) els.pdfTab.click(); // mantém o PDF visível durante a leitura
+  els.pdfTab.click(); // sempre mantém o PDF visível durante a leitura
   if (ai) runAI(list);
   else setTimeout(function () { speakSystem(list, 0); }, 60);
 };
