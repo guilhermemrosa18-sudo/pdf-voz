@@ -174,6 +174,254 @@ body{
   .actions #startRead,.actions #stop{min-height:44px}
   .notice{font-size:10.5px}
 }
+
+/* ===== HUD v2 — redesign visual ===== */
+:root{
+  --hud-bg:#0a0c10;
+  --hud-panel:#12161d;
+  --hud-panel-2:#181d26;
+  --hud-border:rgba(255,255,255,.075);
+  --hud-accent:#7c6cff;
+  --hud-accent-2:#5b8cff;
+}
+body{
+  background:
+    radial-gradient(900px 500px at 50% -180px,rgba(124,108,255,.13),transparent 65%),
+    #090b0f;
+}
+.top{
+  height:auto;
+  min-height:56px;
+  padding:calc(7px + env(safe-area-inset-top)) max(12px,env(safe-area-inset-right)) 7px max(12px,env(safe-area-inset-left));
+  background:rgba(9,11,15,.78);
+  border-bottom:1px solid var(--hud-border);
+  backdrop-filter:blur(24px) saturate(150%);
+}
+.logo{
+  width:32px;height:32px;border-radius:9px;
+  box-shadow:0 5px 18px rgba(124,108,255,.25);
+}
+.brand{gap:8px}
+.brand b{font-size:14px}
+.brand small{font-size:10px;opacity:.72}
+.top .icon{
+  width:36px;height:36px;border-radius:10px;
+  background:rgba(255,255,255,.045);
+  border-color:var(--hud-border);
+}
+.wrap{max-width:1320px;padding:16px 12px 30px}
+.hero{
+  border:1px solid var(--hud-border);
+  border-radius:22px;
+  background:linear-gradient(145deg,rgba(24,29,38,.94),rgba(13,16,22,.94));
+  box-shadow:0 24px 70px rgba(0,0,0,.28);
+  padding:24px;
+}
+.hero h1{font-size:clamp(28px,5vw,48px);max-width:720px}
+.hero .lead{max-width:590px;font-size:15px}
+.hero .actions{margin-top:16px}
+.hero .privacy{font-size:11px;opacity:.78}
+.hero .primary{
+  min-height:46px;padding:11px 18px;
+  box-shadow:0 10px 26px rgba(92,130,255,.16);
+}
+.grid{gap:8px;margin:10px 0}
+.feat{
+  padding:12px;
+  border-radius:14px;
+  background:rgba(18,22,29,.8);
+  border-color:var(--hud-border);
+}
+.feat span{font-size:18px}
+.feat strong{font-size:13px;margin:5px 0 3px}
+.feat p{font-size:10px}
+.reader{
+  margin-top:10px;
+  border-radius:20px;
+  border-color:var(--hud-border);
+  background:#0f1319;
+  box-shadow:0 24px 70px rgba(0,0,0,.28);
+}
+.readerHead{
+  min-height:56px;
+  padding:9px 12px;
+  background:rgba(255,255,255,.018);
+  border-bottom-color:var(--hud-border);
+}
+.readerHead .secondary{
+  min-height:36px;
+  padding:7px 11px;
+  border-radius:10px;
+  font-size:12px;
+}
+.file strong{font-size:13px}
+.file small{font-size:10px}
+.body{min-height:64vh}
+.doc{
+  padding:10px;
+  background:#090b0f;
+}
+.toolbar{
+  padding:0 1px 8px;
+  margin:0;
+}
+.seg button{
+  padding:7px 10px;
+  font-size:11px;
+  background:#141920;
+}
+.mini{
+  width:34px;height:32px;
+  border-radius:9px;
+  font-size:13px;
+  background:#141920;
+}
+.pages{gap:5px;font-size:11px}
+.pages input{height:32px;width:46px;padding:5px;border-radius:9px}
+.stage{
+  min-height:54vh;
+  border-radius:12px;
+  padding:8px;
+  background:#dfe3e9;
+}
+.controls{
+  padding:15px;
+  background:
+    linear-gradient(180deg,rgba(21,26,34,.98),rgba(14,18,24,.98));
+  border-left:1px solid var(--hud-border);
+  position:relative;
+}
+.controls:before{
+  content:"";
+  position:absolute;
+  left:0;top:0;bottom:0;width:2px;
+  background:linear-gradient(180deg,var(--hud-accent),var(--hud-accent-2),transparent);
+  opacity:.75;
+}
+.status{
+  font-size:9px;
+  letter-spacing:.12em;
+  color:#8d97a8;
+}
+.now{
+  font-size:16px;
+  margin-top:5px;
+  max-height:42px;
+  overflow:hidden;
+}
+.progress{margin:13px 0 12px}
+.progress>div:first-child{font-size:10px!important;margin-bottom:6px!important}
+.track{height:5px;background:#252a34}
+.fill{background:linear-gradient(90deg,var(--hud-accent),var(--hud-accent-2))}
+.player{
+  grid-template-columns:38px 1fr 38px;
+  gap:7px;
+}
+.round{
+  width:38px;height:38px;
+  border-radius:11px;
+  background:#181d26;
+  border-color:var(--hud-border);
+}
+.playbtn{
+  height:46px;
+  border-radius:12px;
+  font-size:15px;
+  background:linear-gradient(135deg,var(--hud-accent),var(--hud-accent-2));
+  box-shadow:0 9px 22px rgba(92,130,255,.18);
+}
+.startbox{
+  margin-top:12px;
+  padding:11px;
+  border-radius:13px;
+  background:#151a22;
+  border-color:var(--hud-border);
+}
+.startbox .title{font-size:13px}
+.startbox .sub{font-size:10px;line-height:1.35;margin:3px 0 8px}
+.startrow{gap:6px}
+.startrow button,.startrow .pagepick{
+  min-height:38px;
+  border-radius:9px;
+  font-size:11px;
+}
+.startrow .pagepick{flex-basis:50px}
+.outline{margin-top:8px}
+.outline small{font-size:9px;margin:5px 0}
+.outline select,.field select{
+  min-height:38px;
+  border-radius:9px;
+  padding:7px 9px;
+  font-size:11px;
+  background:#151a22;
+  border-color:var(--hud-border);
+}
+.field{margin-top:11px}
+.field label{font-size:10px;margin-bottom:5px}
+.field input[type=range]{height:18px}
+.row{gap:8px}
+.aiVoiceNotice{font-size:10px}
+.actions{gap:7px;margin-top:12px}
+.actions #startRead,.actions #stop{
+  min-height:42px;
+  border-radius:10px;
+  font-size:12px;
+}
+.notice{
+  margin-top:10px;
+  padding:8px 9px;
+  border-radius:10px;
+  font-size:10px;
+  background:#151a22;
+  border-color:var(--hud-border);
+}
+@media(min-width:901px){
+  .body{grid-template-columns:minmax(0,1fr) 310px}
+  .controls{
+    position:sticky;
+    top:57px;
+    align-self:start;
+    max-height:calc(100vh - 68px);
+    overflow:auto;
+  }
+}
+@media(max-width:900px){
+  .controls{
+    border-left:0;
+    border-top:1px solid var(--hud-border);
+    padding:13px 12px 16px;
+  }
+  .controls:before{
+    left:0;right:0;top:0;bottom:auto;width:auto;height:2px;
+    background:linear-gradient(90deg,var(--hud-accent),var(--hud-accent-2),transparent);
+  }
+}
+@media(max-width:560px){
+  .wrap{padding:8px 7px 22px}
+  .hero{padding:17px;border-radius:18px}
+  .hero h1{font-size:29px}
+  .hero .lead{font-size:13px;line-height:1.45}
+  .grid{grid-template-columns:repeat(2,1fr);margin:8px 0}
+  .feat{min-height:0;padding:10px}
+  .feat p{display:none}
+  .reader{border-radius:16px}
+  .readerHead{min-height:51px;padding:8px 10px}
+  .doc{padding:7px}
+  .toolbar{overflow:hidden}
+  .seg button{padding:6px 9px}
+  .pages{max-width:100%;justify-content:flex-end}
+  .stage{min-height:46vh;border-radius:10px;padding:5px}
+  .controls{padding:13px 10px 15px}
+  .now{font-size:15px}
+  .player{grid-template-columns:40px 1fr 40px}
+  .round{width:40px;height:40px}
+  .playbtn{height:46px}
+  .startrow{grid-template-columns:1fr 54px 54px}
+  .startrow button,.startrow .pagepick{min-height:37px}
+  .row{grid-template-columns:1fr 1fr}
+  .actions #startRead{flex:1}
+}
+
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
