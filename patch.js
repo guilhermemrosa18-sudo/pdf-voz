@@ -101,7 +101,7 @@ function readablePage(p,c){
     if((i<3||i>=a.length-3)&&a.length>5&&c[key(s)]>=2)return;
     out.push(s);
   });
-  return clean(out.join(" "));
+  return removePdfDuplicates(clean(out.join(" ")));
 }
 function speechText(s){
   s=clean(s).replace(/(?:https?:\/\/|www\.)\S+/gi," ").replace(/\b[-\w]+\.com\.br\b/gi," ");
