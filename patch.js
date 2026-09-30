@@ -1,6 +1,6 @@
 (function(){
 "use strict";
-var run=0, active=null, audio=null, audioUrl=null, wrap=null, overlay=null, cache=Object.create(null), noise=Object.create(null), last="";
+var run=0, active=null, audio=null, audioUrl=null, audioCtx=null, audioSource=null, currentBuffer=null, pausedOffset=0, sourceStartedAt=0, wrap=null, overlay=null, cache=Object.create(null), noise=Object.create(null), last="";
 
 function clean(s){return String(s||"").replace(/[\u00A0\t]+/g," ").replace(/\s+/g," ").trim();}
 function key(s){return clean(s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9]+/g," ").trim();}
@@ -151,8 +151,11 @@ function spanAt(c,pos){
   for(var i=0;i<c.spans.length;i++)if(pos>=c.spans[i].start&&pos<c.spans[i].end)return i;
   return Math.max(0,c.spans.length-1);
 }
+function unlockAudio(){try{if(!audioCtx)audioCtx=new (window.AudioContext||window.webkitAudioContext)();if(audioCtx.state==="suspended")audioCtx.resume().catch(function(){});}catch(e){}}
+function stopAudioContext(){try{if(audioSource){audioSource.onended=null;audioSource.stop(0);}}catch(e){}audioSource=null;currentBuffer=null;pausedOffset=0;sourceStartedAt=0;}
 function stop(){
   run++;
+  stopAudioContext();
   if(active)active.stop=true;
   try{speechSynthesis.cancel();}catch(e){}
   if(audio){try{audio.pause();}catch(e){}}
@@ -167,6 +170,7 @@ window.speakFromPage=function(){
   var start=Math.max(1,Math.min(Number(els.startPage.value)||state.page,state.pdf.numPages));
   var l=makeList(start);
   if(!l.length){toast("Não encontrei texto principal nesta página.");return;}
+  unlockAudio();
   active=l;state.speaking=true;state.paused=false;els.play.textContent="⏸ Pausar";
   els.pdfTab.click();
   /* Para evitar a fala embolada em motores problemáticos, usa a voz do sistema quando a IA não estiver disponível. */
@@ -197,16 +201,23 @@ async function runAI(l){
     var c=l[i];
     try{
       var speaker="https://huggingface.co/onnx-community/Supertonic-TTS-2-ONNX/resolve/main/voices/"+encodeURIComponent(els.aiVoice?els.aiVoice.value:"M1")+".bin";
-      var o=await synth("<pt>"+c.text+"</pt>",{speaker_embeddings:speaker,num_inference_steps:8,speed:Math.max(.8,Math.min(1.2,Number(els.speed.value)||1))});
+      var o=await synth("<pt>"+c.text,{speaker_embeddings:speaker,num_inference_steps:5,speed:Math.max(.8,Math.min(1.2,Number(els.speed.value)||1))});
       if(my!==run)return;
-      var b=o&&typeof o.toBlob==="function"?o.toBlob():null;if(!b)throw new Error("sem audio");
-      if(audioUrl)URL.revokeObjectURL(audioUrl);
-      audioUrl=URL.createObjectURL(b);audio=new Audio(audioUrl);audio.playbackRate=Number(els.speed.value)||1;
-      (function(ch){
-        function tick(){if(my!==run||!audio)return;if(audio.duration>0&&isFinite(audio.duration))mark(ch,Math.floor(Math.min(.98,audio.currentTime/audio.duration)*ch.spans.length));requestAnimationFrame(tick);}
-        requestAnimationFrame(tick);
-      })(c);
-      await new Promise(function(resolve,reject){audio.onended=resolve;audio.onerror=reject;audio.play().catch(reject);});
+      var b=o&&typeof o.toBlob==="function"?await o.toBlob():null;if(!b)throw new Error("sem audio");
+      var arr=await b.arrayBuffer();
+      var ctx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+      audioCtx=ctx;
+      if(ctx.state==="suspended")await ctx.resume().catch(function(){});
+      var buf=await ctx.decodeAudioData(arr.slice(0));
+      if(my!==run)return;
+      currentBuffer=buf;pausedOffset=0;
+      await new Promise(function(resolve,reject){
+        var source=ctx.createBufferSource();audioSource=source;source.buffer=buf;source.playbackRate.value=Math.max(.5,Math.min(2.1,Number(els.speed.value)||1));source.connect(ctx.destination);
+        var start=ctx.currentTime;sourceStartedAt=start;
+        source.onended=function(){if(my!==run)return;audioSource=null;currentBuffer=null;resolve();};
+        try{source.start(0,0);}catch(e){audioSource=null;reject(e);return;}
+        (function tick(){if(my!==run||!audioSource)return;var t=Math.max(0,ctx.currentTime-sourceStartedAt);var r=buf.duration?Math.min(.98,t/buf.duration):0;mark(c,Math.floor(r*c.spans.length));requestAnimationFrame(tick);})();
+      });
     }catch(e){if(my===run){toast("A voz IA falhou; usando a voz do dispositivo.");speakSystem(l.slice(i));}return;}
   }
   if(my===run){stop();toast("Leitura concluída.");}
