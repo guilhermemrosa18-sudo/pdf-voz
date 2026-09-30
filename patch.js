@@ -31,7 +31,9 @@ function lineData(p){
         var pc=Math.max(1,clean(prev.str).length),ic=Math.max(1,s.length);
         var cw=((Number(prev.w||0)/pc)+(Number(it.w||0)/ic))/2;
         var noSpace=/^[,.;:!?%)\]}]/.test(s)||/[([{"'¿¡-]$/.test(prev.str||"");
-        out+=(noSpace||gap<=Math.max(1.2,cw*.72)?"":" ")+s;
+        var fragment=pc<=2||ic<=2;
+        var joinGap=fragment?Math.max(1.4,cw*1.15):Math.max(1.0,cw*.30);
+        out+=(noSpace||gap<=joinGap?"":" ")+s;
       }
       prev=it;
     });
@@ -156,35 +158,59 @@ window.speakFromPage=function(){
     return;
   }
   if(!list.length){toast("Não encontrei texto principal para ler.");return;}
+  if(!("speechSynthesis" in window)||!("SpeechSynthesisUtterance" in window)){
+    toast("Este navegador não disponibilizou a leitura por voz.");
+    return;
+  }
   state.speaking=true;state.paused=false;els.play.textContent="⏸ Pausar";
   els.pdfTab.classList.add("active");els.textTab.classList.remove("active");els.stage.hidden=false;els.text.hidden=true;
   run++;
   var my=run;
+  var voices=speechSynthesis.getVoices()||[];
+  if(voices.length)state.voices=voices.slice();
+  var selected=state.voices[Number(els.voice.value)];
+  if(!selected)selected=state.voices.find(function(v){return /^pt[-_]BR$/i.test(v.lang||"");})||state.voices.find(function(v){return /^pt[-_]BR/i.test(v.lang||"");})||state.voices[0];
+  var failed=false;
   function next(){
     if(my!==run||!state.speaking)return;
     if(pos>=list.length){
       state.speaking=false;state.paused=false;els.play.textContent="▶ Ler";toast("Leitura concluída.");return;
     }
     var item=list[pos++];
-    if(state.page!==item.page)renderPage(item.page);
     els.now.textContent=els.name.textContent+" — página "+item.page;
     var pct=Math.round(pos/list.length*100);
     els.pct.textContent=pct+"%";els.fill.style.width=pct+"%";els.sent.textContent=pos+" / "+list.length;
-    var u=new SpeechSynthesisUtterance(item.text),v=getVoice();
-    if(v){u.voice=v;u.lang=v.lang||"pt-BR";}else u.lang="pt-BR";
-    u.rate=Math.max(.6,Math.min(2,Number(els.speed.value)||1));
-    u.pitch=1;u.volume=1;state.utterance=u;
-    u.onstart=function(){toast("Lendo página "+item.page+"…");};
+    if(state.page!==item.page)renderPage(item.page);
+    var u=new SpeechSynthesisUtterance(item.text);
+    if(selected){u.voice=selected;u.lang=selected.lang||"pt-BR";}else{u.lang="pt-BR";}
+    u.rate=Math.max(.6,Math.min(1.8,Number(els.speed.value)||1));u.pitch=1;u.volume=1;
+    state.utterance=u;
+    var started=false;
+    u.onstart=function(){started=true;toast("Lendo página "+item.page+"…");};
     u.onend=function(){if(my===run)next();};
-    u.onerror=function(e){
-      if(my!==run||e.error==="canceled"||e.error==="interrupted")return;
+    u.onerror=function(ev){
+      if(my!==run||ev.error==="canceled"||ev.error==="interrupted")return;
+      if(!failed){
+        failed=true;
+        var fallback=state.voices.find(function(v){return /^pt[-_]BR/i.test(v.lang||"");});
+        if(fallback&&fallback!==selected){
+          selected=fallback;
+          toast("Trocando para outra voz pt-BR disponível…");
+          setTimeout(function(){if(my===run)next();},50);
+          return;
+        }
+      }
       state.speaking=false;els.play.textContent="▶ Ler";
-      toast("A voz do dispositivo não iniciou: "+(e.error||"erro desconhecido"));
+      toast("A voz do PC não iniciou: "+(ev.error||"erro"));
     };
     try{
-      speechSynthesis.cancel();
-      speechSynthesis.resume();
       speechSynthesis.speak(u);
+      setTimeout(function(){
+        if(started||my!==run||!state.speaking)return;
+        if(!speechSynthesis.speaking&&!speechSynthesis.pending){
+          try{speechSynthesis.speak(u);}catch(e){}
+        }
+      },1000);
     }catch(e){
       state.speaking=false;els.play.textContent="▶ Ler";
       toast("Erro ao iniciar a voz: "+(e&&e.message||"erro"));
