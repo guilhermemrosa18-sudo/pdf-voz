@@ -77,66 +77,72 @@ function numWords(m) {
 }
 
 function expand0(t) {
+  /* Abreviações apenas quando há um limite claro de palavra. */
   t = t.replace(ABBR_RE, function (m, pre, ab) {
     var v = ABBR[ab.toLowerCase()];
     return v ? pre + v : m;
   });
 
-  /* Datas: 29/09/2026 -> vinte e nove de setembro de dois mil e vinte e seis. */
+  /* Datas. */
   t = t.replace(/\\b(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})\\b/g,function(m,d,mo,y){
     return extenso(+d)+' de '+(MESES[+mo-1]||mo)+' de '+extenso(+y);
   });
 
-  /* Valores monetários: 1.234,56 -> mil duzentos e trinta e quatro reais e cinquenta e seis centavos. */
-  function money(m,currency){
-    var raw=m.replace(/[^\\d,.-]/g,'');
-    var neg=/^-/.test(raw), s=raw.replace(/^-/,''), parts=s.split(','), whole=parts[0].replace(/\\./g,''), cents=parts[1]||'';
-    var w=whole?extenso(+whole):'zero';
-    if(cents){
-      cents=(cents+'00').slice(0,2);
-      w+=' e '+extenso(+cents)+' centavos';
-    }
-    return (neg?'menos ':'')+w+' '+currency;
-  }
-  t=t.replace(/R\\$\\s*[\\d.]+(?:,\\d{1,2})?/g,function(m){return money(m,'reais');});
-  t=t.replace(/US\\$\\s*[\\d.]+(?:,\\d{1,2})?/g,function(m){return money(m,'dólares');});
-
-  /* Percentuais e unidades comuns. */
-  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*%/g,function(m,n){return numberPhrase(n)+' por cento';});
-  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*km\\b/gi,function(m,n){return numberPhrase(n)+' quilômetros';});
-  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*kg\\b/gi,function(m,n){return numberPhrase(n)+' quilos';});
-  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*m²/gi,function(m,n){return numberPhrase(n)+' metros quadrados';});
-  t=t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*°\\s*C\\b/gi,function(m,n){return numberPhrase(n)+' graus Celsius';});
-
-  /* Artigos/incisos ordinais. */
-  t=t.replace(/\\b(\\d{1,2})º\\b/g,function(m,n){return ORD[+n]||numberPhrase(n);});
-  t=t.replace(/\\b(\\d{1,2})ª\\b/g,function(m,n){return ORDF[+n]||numberPhrase(n);});
-
-  /* Frações/leis como 8.080/1990: mantém a relação "de". */
-  t=t.replace(/\\b(\\d[\\d.]{1,})\\/(\\d{4})\\b/g,function(m,a,b){
-    return numberPhrase(a)+' de '+numberPhrase(b);
+  /* Valores monetários: apenas os que realmente possuem R$ ou US$. */
+  t = t.replace(/R\\$\\s*[\\d.]+(?:,\\d{1,2})?/g,function(m){
+    return moneyPhrase(m,'reais');
+  });
+  t = t.replace(/US\\$\\s*[\\d.]+(?:,\\d{1,2})?/g,function(m){
+    return moneyPhrase(m,'dólares');
   });
 
-  /* Decimais com vírgula. Milhares com ponto. Inteiros grandes/identificadores viram dígitos. */
-  t=t.replace(/\\b\\d{1,3}(?:\\.\\d{3})+(?:,\\d+)?\\b/g,function(m){
-    return numberPhrase(m);
+  /* Unidades e percentuais. */
+  t = t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*%/g,function(m,n){return decimalPhrase(n)+' por cento';});
+  t = t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*km\\b/gi,function(m,n){return decimalPhrase(n)+' quilômetros';});
+  t = t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*kg\\b/gi,function(m,n){return decimalPhrase(n)+' quilos';});
+  t = t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*m²/gi,function(m,n){return decimalPhrase(n)+' metros quadrados';});
+  t = t.replace(/\\b(\\d+(?:[.,]\\d+)?)\\s*°\\s*C\\b/gi,function(m,n){return decimalPhrase(n)+' graus Celsius';});
+
+  /* Ordinais. */
+  t = t.replace(/\\b(\\d{1,2})º\\b/g,function(m,n){return ORD[+n]||n;});
+  t = t.replace(/\\b(\\d{1,2})ª\\b/g,function(m,n){return ORDF[+n]||n;});
+
+  /*
+    Números jurídicos como 8.080/1990:
+    conserva os algarismos para não destruir a correspondência do texto do PDF.
+    A fala recebe "número" e "de" sem expandir cada dígito.
+  */
+  t = t.replace(/\\bn[ºo]?[.]\\s*(\\d[\\d.]*)\\/(\\d{4})\\b/gi,function(m,a,b){
+    return 'número '+a+' de '+b;
   });
-  t=t.replace(/\\b\\d+,\\d+\\b/g,function(m){return numberPhrase(m);});
-  t=t.replace(/\\b\\d{1,9}\\b/g,function(m){return numberPhrase(m);});
-  t=t.replace(SIGLA_RE,function(m){return SIGLAS[m.toUpperCase()]||m;});
+
+  /* Decimais: transforma a vírgula em pausa natural, sem expandir todos os dígitos. */
+  t = t.replace(/\\b(\\d+),(\\d+)\\b/g,function(m,a,b){
+    return a+' vírgula '+b;
+  });
+
+  /* Siglas conhecidas: soletra somente siglas, não palavras em caixa alta aleatórias. */
+  t = t.replace(SIGLA_RE,function(m){
+    return SIGLAS[m.toUpperCase()]||m;
+  });
+
   return t;
 }
-function numberPhrase(token){
-  var raw=String(token).replace(/\\s/g,'');
-  var normalized=raw.replace(/\\./g,'').replace(',', '.');
-  if(/^-?\\d+\\.\\d+$/.test(normalized)){
-    var pp=normalized.split('.');
-    return (pp[0] ? extenso(+pp[0]) : 'zero')+' vírgula '+(pp[1].length>3?digitos(pp[1]):extenso(+pp[1]));
+function decimalPhrase(s){
+  var z=String(s).replace(',','.');
+  if(z.includes('.')){
+    var q=z.split('.');
+    return q[0]+' vírgula '+q[1];
   }
-  var int=raw.replace(/\\./g,'');
-  if(/^\\d{1,7}$/.test(int)) return extenso(+int);
-  if(/^\\d+$/.test(int)) return digitos(int);
-  return raw;
+  return s;
+}
+function moneyPhrase(m,currency){
+  var raw=m.replace(/[^0-9,.-]/g,'');
+  var parts=raw.split(',');
+  var whole=parts[0], cents=parts[1];
+  var out=whole+' '+currency;
+  if(cents) out+=' e '+cents+' centavos';
+  return out;
 }
 
 var MESES = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
@@ -204,27 +210,82 @@ var curList = null, curC = null, curW = null, view = { list: null, page: 0 };
 function pageSents(p, mode) {
   var it = state.layoutPages[p];
   if (it && !it.__d) { it = state.layoutPages[p] = dedupe(it); it.__d = 1; }
-  var rawLines = (pageSmartText(p, mode) || '').split('\n').map(function(l){return l.trim();}).filter(Boolean);
+
+  /* Remove elementos de navegação, marca d'água e cabeçalho/rodapé do site. */
+  function isNoiseLine(l) {
+    var s = (l || '').trim();
+    if (!s) return true;
+    if (/^(?:p[áa]gina\s*)?\d+\s*(?:de|\/|of)\s*\d+$/i.test(s)) return true;
+    if (/^\d+\s+de\s+\d+\b/i.test(s)) return true;
+    if (/^(?:www\.)?[-\w]+\.(?:com|com\.br|br|org|net)(?:\/[^\s]*)?$/i.test(s)) return true;
+    if (/gran\.com\.br/i.test(s)) return true;
+    if (/^(?:sum[áa]rio|menu|compartilhe|www\.|https?:\/\/)/i.test(s)) return true;
+    if (/^\d+\s+de\s+\d+\s+.*(?:\.com|\.com\.br|\.br)\b/i.test(s)) return true;
+    return false;
+  }
+
+  var rawLines = (pageSmartText(p, mode) || '').split('\n')
+    .map(function(l){return l.trim();})
+    .filter(function(l){return l && !isNoiseLine(l);});
+
   var lines = [];
   rawLines.forEach(function(l){
+    /* Limpa marcadores de página/URL que possam ter vindo grudados ao início/fim. */
+    l = l
+      .replace(/^\d+\s+de\s+\d+\s*/i, '')
+      .replace(/\b(?:p[áa]gina\s*)?\d+\s+de\s+\d+\b/gi, '')
+      .replace(/(?:https?:\/\/|www\.)\S+/gi, '')
+      .replace(/\b[-\w]+\.com\.br\b/gi, '')
+      .replace(/\b[-\w]+\.com\b/gi, '')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if(!l || isNoiseLine(l))return;
+
     var prev=lines[lines.length-1]||'';
     var a=l.toLowerCase().replace(/[^a-zà-ÿ0-9]+/g,' ');
     var b=prev.toLowerCase().replace(/[^a-zà-ÿ0-9]+/g,' ');
     if(a && a===b)return;
     lines.push(l);
   });
+
   if (!lines.length) return [];
+
   var t = '';
   lines.forEach(function (l, k) {
     var next = lines[k + 1] || '';
+    /* Hifenização de fim de linha: "políti-" + "ca" = "política". */
     if (/[A-Za-zÀ-ÿ]-$/.test(l) && /^[a-zà-ÿ]/.test(next)) { t += l.slice(0, -1); return; }
-    if (next && l.length < 60 && !/[.!?…:;,]["')»\]]*$/.test(l) && /^[A-ZÀ-Ý0-9]/.test(next)) l += '.';
+
+    /*
+      Não inventa ponto no fim de título/linha curta.
+      Só cria uma pausa quando a linha parece ser uma frase completa.
+    */
+    if (next && l.length < 120 && !/[.!?…:;,]["')»\]]*$/.test(l) &&
+        /^[A-ZÀ-Ý0-9]/.test(next) && /\s/.test(l)) {
+      /* para subtítulos curtos, use ponto; para títulos em caixa alta, não */
+      if (!/^[A-ZÀ-Ý0-9\s–—-]+$/.test(l)) l += '.';
+    }
     t += l + ' ';
   });
+
   t = expand(t.replace(/\s+/g, ' ').trim());
+  /* Símbolos de pontuação isolados não devem virar palavras. */
+  t = t
+    .replace(/\s+([,.;:!?])/g, '$1')
+    .replace(/([,.;:!?]){2,}/g, '$1')
+    .replace(/\.{2,}/g, '.')
+    .replace(/\(\s*\)/g, '')
+    .trim();
+
   if (!t) return [];
-  if (!/[.!?]["')»\]]*$/.test(t)) t += '.';
-  return t.replace(/([.!?]["')»\]]*)\s+(?=[A-ZÀ-Ý"(0-9])/g, '$1\n').split('\n');
+
+  /* Evita que uma palavra/linha repetida apareça duas vezes na fala. */
+  var result = t.replace(/([^.!?]+)(?:\s+\1)(?=\s|$)/gi, '$1');
+
+  if (!/[.!?]["')»\]]*$/.test(result)) result += '.';
+  return result.replace(/([.!?]["')»\]]*)\s+(?=[A-ZÀ-Ý"(0-9])/g, '$1\n').split('\n')
+    .map(function(s){return s.trim();})
+    .filter(function(s){return s.length>1 && !isNoiseLine(s);});
 }
 /* junta frases em trechos; o primeiro e curto para a fala comecar logo */
 function pack(sents, first, max) {
