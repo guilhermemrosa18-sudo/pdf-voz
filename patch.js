@@ -14,6 +14,37 @@ function pageLines(p){
   }
   return String(raw||"").split(/\n+/).map(clean).filter(Boolean);
 }
+function removePdfDuplicates(text){
+  var words=clean(text).split(/\s+/).filter(Boolean);
+  if(words.length<2)return words.join(" ");
+  var out=[];
+  var weak=/^(a|o|as|os|um|uma|uns|umas|de|da|do|das|dos|e|ou|em|no|na|nos|nas|por|para|com|sem|que|se|não|sim)$/i;
+  for(var i=0;i<words.length;i++){
+    var w=words[i],prev=out[out.length-1];
+    if(prev&&key(prev)===key(w)&&w.length>=3&&!weak.test(w))continue;
+    out.push(w);
+  }
+  for(var pass=0;pass<2;pass++){
+    var changed=false,next=[];
+    for(var i=0;i<out.length;){
+      var removed=false;
+      for(var n=Math.min(6,Math.floor((out.length-i)/2));n>=2;n--){
+        var same=true;
+        for(var j=0;j<n;j++){
+          if(key(out[i+j])!==key(out[i+n+j])){same=false;break;}
+        }
+        if(same){
+          for(var z=0;z<n;z++)next.push(out[i+z]);
+          i+=2*n;changed=true;removed=true;break;
+        }
+      }
+      if(!removed){next.push(out[i]);i++;}
+    }
+    out=next;
+    if(!changed)break;
+  }
+  return out.join(" ");
+}
 function edgeCounts(){
   var c=Object.create(null);
   for(var p=0;p<state.pdf.numPages;p++){
@@ -93,7 +124,13 @@ window.speakFromPage=function(){
   stop();
   var start=Math.max(1,Math.min(Number(els.startPage.value)||state.page,state.pdf.numPages));
   state.readStartPage=start;
-  list=makeList(start);
+  try{
+    list=makeList(start);
+  }catch(e){
+    state.speaking=false;els.play.textContent="▶ Ler";
+    toast("Erro ao preparar a leitura: "+(e&&e.message||"erro desconhecido"));
+    return;
+  }
   if(!list.length){toast("Não encontrei texto principal para ler.");return;}
   state.speaking=true;state.paused=false;els.play.textContent="⏸ Pausar";
   els.pdfTab.click();
