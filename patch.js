@@ -324,6 +324,33 @@ function stop(){
   state.speaking=false;state.paused=false;state.utterance=null;
   if(els.play)els.play.textContent="▶ Ler";
 }
+
+// iOS/Safari may suspend speech synthesis when the page is backgrounded.
+// Keep the utterance alive and request a resume whenever the document returns
+// from the background. This is best-effort for the device's native TTS.
+var bgResumeTimer=null;
+function resumeBackgroundSpeech(){
+  if(!state.speaking)return;
+  try{
+    if(typeof speechSynthesis!=="undefined"){
+      if(state.paused===false) speechSynthesis.resume();
+      if(!speechSynthesis.speaking && !speechSynthesis.pending && state.utterance){
+        speechSynthesis.speak(state.utterance);
+      }
+    }
+  }catch(e){}
+}
+document.addEventListener("visibilitychange",function(){
+  if(document.visibilityState==="visible"){
+    clearTimeout(bgResumeTimer);
+    bgResumeTimer=setTimeout(resumeBackgroundSpeech,120);
+  }else if(state.speaking){
+    // Do not call pause/cancel when minimizing or locking the screen.
+    clearTimeout(bgResumeTimer);
+    bgResumeTimer=setTimeout(resumeBackgroundSpeech,250);
+  }
+});
+window.addEventListener("pageshow",function(){setTimeout(resumeBackgroundSpeech,100);});
 window.stopSpeech=stop;
 
 window.speakFromPage=function(){
