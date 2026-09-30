@@ -1,4 +1,4 @@
-const CACHE="pdf-voz-shell-v2";
+const CACHE="pdf-voz-shell-v3";
 const APP=["./","./index.html","./patch.js","./manifest.webmanifest"];
 
 self.addEventListener("install",event=>{
