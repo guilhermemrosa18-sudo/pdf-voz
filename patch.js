@@ -163,7 +163,7 @@ function stop(){
 window.stopSpeech=stop;
 window.speakFromPage=function(){
   if(!state.pdf){toast("Abra um PDF primeiro.");return;}
-  stop();cache=Object.create(null);repeatedNoise=null;buildNoise();ensureOverlay();
+  stop();cache=Object.create(null);buildNoise();ensureOverlay();
   var start=Math.max(1,Math.min(Number(els.startPage.value)||state.page,state.pdf.numPages));
   var l=makeList(start);
   if(!l.length){toast("Não encontrei texto principal nesta página.");return;}
