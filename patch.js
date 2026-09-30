@@ -45,6 +45,19 @@ function duplicateClean(s){
     if(p&&key(p)===key(x)&&x.length>=3&&!weak.test(x))return;
     out.push(x);
   });
+  for(var n=6;n>=2;n--){
+    var changed=true;
+    while(changed){
+      changed=false;
+      for(var i=0;i+n*2<=out.length;i++){
+        var same=true;
+        for(var j=0;j<n;j++){
+          if(key(out[i+j])!==key(out[i+n+j])){same=false;break;}
+        }
+        if(same){out.splice(i+n,n);changed=true;break;}
+      }
+    }
+  }
   return out.join(" ");
 }
 
@@ -98,13 +111,16 @@ function isFooter(s){
     /gran\.com\.br/i.test(s) ||
     /^(?:©|copyright|todos os direitos|o conteúdo deste livro|este conteúdo|proibida a reprodução)/i.test(s);
 }
+function edgeKey(s){
+  return key(s).replace(/\b\d+(?:[.,]\d+)*\b/g,"#").replace(/\s+/g," ").trim();
+}
 function edgeCounts(){
   var top=Object.create(null),bottom=Object.create(null);
   for(var p=0;p<state.pdf.numPages;p++){
     var lines=rawLines(p); if(!lines.length)continue;
     var ys=lines.map(function(l){return l.y;}),hi=Math.max.apply(null,ys),lo=Math.min.apply(null,ys),span=Math.max(1,hi-lo);
     lines.forEach(function(l){
-      var k=key(l.text); if(!k)return;
+      var k=edgeKey(l.text); if(!k)return;
       if(hi-l.y<span*.18)top[k]=(top[k]||0)+1;
       if(l.y-lo<span*.18)bottom[k]=(bottom[k]||0)+1;
     });
@@ -223,10 +239,11 @@ function pageText(p,edges){
   var headerKeys=Object.create(null),footerKeys=Object.create(null);
   lines.forEach(function(l){
     var fromTop=top-l.y,fromBottom=l.y-bottom,k=key(l.text);if(!k)return;
-    if(fromTop<span*.18&&edges.top[k]>=2)headerKeys[k]=true;
-    if(fromBottom<span*.18&&edges.bottom[k]>=2)footerKeys[k]=true;
+    if(fromTop<span*.18&&edges.top[edgeKey(l.text)]>=2)headerKeys[k]=true;
+    if(fromBottom<span*.18&&edges.bottom[edgeKey(l.text)]>=2)footerKeys[k]=true;
     if(fromTop<span*.16&&/(?:gran\s+concursos?|gran\.com\.br|pdf\s+sint[eé]tico|introdu[cç][aã]o\s+.*administr)/i.test(l.text))headerKeys[k]=true;
-    if(fromBottom<span*.18&&isFooter(l.text))footerKeys[k]=true;
+    if(fromBottom<span*.20&&isFooter(l.text))footerKeys[k]=true;
+    if(fromTop<span*.20&&/(?:gran\s+concursos?|gran\.com\.br|pdf\s+sint[eé]tico|www\.|https?:\/\/)/i.test(l.text))headerKeys[k]=true;
   });
   base=base.filter(function(s){
     s=clean(s);if(!s)return false;var k=key(s);
@@ -283,7 +300,7 @@ function getEdges(){
 }
 function buildPageQueue(p){
   var text=speechText(pageText(p,getEdges()));
-  return splitSpeech(text,650).map(function(x){return {text:x,page:p+1};});
+  return splitSpeech(text,650).map(function(x){return {text:duplicateClean(x),page:p+1};});
 }
 
 function getVoice(){
