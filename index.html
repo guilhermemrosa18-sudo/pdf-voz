@@ -201,7 +201,7 @@ function makeLines(items){
   return lines.map(l=>{
     l.items.sort((a,b)=>a.x-b.x);
     l.minX=Math.min(...l.items.map(x=>x.x)); l.maxX=Math.max(...l.items.map(x=>x.x+x.w));
-    l.text=normalizeSpaces(l.items.map(x=>x.str).join(' '));
+    l.text=normalizeSpaces(l.items.map((x,i,a)=>{if(i===0)return x.str;const p=a[i-1],gap=x.x-(p.x+p.w);const noSpace=/^[,.;:!?%)\\]}]/.test(x.str)||/[([{"'¿¡-]$/.test(p.str);const tight=gap<=Math.max(1.5,Math.min(x.h,p.h)*.22);return(noSpace||tight?'':' ')+x.str;}).join(''));
     return l;
   }).filter(l=>l.text);
 }
