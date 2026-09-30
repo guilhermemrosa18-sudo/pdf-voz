@@ -17,6 +17,163 @@
 @media(min-width:1100px){.wrap{max-width:1500px}.body{grid-template-columns:minmax(0,1fr) 340px}.doc{padding:20px}.stage{min-height:75vh;max-height:85vh;align-items:start}.controls{position:sticky;top:65px;align-self:start;max-height:calc(100vh - 75px);overflow-y:auto}.toolbar{flex-wrap:nowrap}.hero{padding:38px}.grid{grid-template-columns:repeat(4,1fr)}}
 @media(max-width:560px){.pages{flex-wrap:wrap}.pages .mini{width:36px}.pages input{width:48px}}
 .stage[hidden],.text[hidden],.loading[hidden],canvas[hidden]{display:none!important}
+
+/* ===== PDF Voz — HUD Clean ===== */
+:root{
+  --clean-radius:16px;
+  --clean-radius-sm:12px;
+}
+body{
+  letter-spacing:-.01em;
+}
+.top{
+  min-height:calc(58px + env(safe-area-inset-top));
+  padding-top:calc(9px + env(safe-area-inset-top));
+  padding-bottom:9px;
+  background:rgba(11,13,18,.94);
+  border-bottom:1px solid rgba(255,255,255,.055);
+}
+.logo{
+  width:34px;
+  height:34px;
+  border-radius:10px;
+  font-size:15px;
+}
+.brand{gap:9px}
+.brand b{font-size:15px}
+.brand small{font-size:11px}
+
+.wrap{padding-top:16px}
+.hero{
+  border-radius:20px;
+  padding:22px;
+  box-shadow:0 16px 40px rgba(0,0,0,.18);
+}
+.grid{gap:10px;margin:12px 0}
+.feat{
+  border-radius:14px;
+  padding:13px;
+}
+.reader{
+  border-radius:18px;
+  box-shadow:0 14px 40px rgba(0,0,0,.14);
+}
+.readerHead{
+  padding:12px 14px;
+  background:rgba(255,255,255,.012);
+}
+.body{min-height:60vh}
+.controls{
+  padding:16px;
+  background:#10141a;
+}
+.status{
+  font-size:10px;
+  font-weight:700;
+  letter-spacing:.09em;
+  color:#818b9b;
+}
+.now{
+  font-size:17px;
+  line-height:1.25;
+  margin-top:4px;
+}
+.progress{margin:14px 0 16px}
+.track{height:6px}
+.player{
+  grid-template-columns:42px 1fr 42px;
+  gap:8px;
+}
+.round{
+  width:42px;
+  height:42px;
+  border-radius:13px;
+  font-size:17px;
+}
+.playbtn{
+  height:50px;
+  border-radius:14px;
+  font-size:17px;
+  box-shadow:0 7px 18px rgba(92,130,255,.16);
+}
+.field{margin-top:13px}
+.field label{
+  font-size:11px;
+  margin-bottom:6px;
+}
+.field select,
+.outline select{
+  min-height:44px;
+  border-radius:12px;
+  padding:9px 11px;
+}
+.startbox{
+  margin-top:14px;
+  border-radius:14px;
+  padding:12px;
+}
+.startbox .title{font-size:14px}
+.startbox .sub{font-size:11px}
+.startrow{gap:7px}
+.startrow button{
+  min-height:43px;
+  border-radius:12px;
+}
+.startrow .pagepick{
+  flex-basis:54px;
+  min-height:43px;
+}
+.notice{
+  margin-top:12px;
+  border-radius:12px;
+  padding:9px 10px;
+  font-size:11px;
+}
+.actions{gap:8px;margin-top:14px}
+.primary,.secondary,.icon{
+  border-radius:12px;
+}
+.primary{box-shadow:0 7px 18px rgba(92,130,255,.12)}
+.actions #startRead{
+  min-height:46px;
+  flex:1;
+}
+.actions #stop{
+  min-height:46px;
+  padding-left:15px;
+  padding-right:15px;
+}
+.field input[type=range]{
+  accent-color:#775cff;
+}
+@media(max-width:900px){
+  .controls{
+    border-top:1px solid rgba(255,255,255,.055);
+  }
+}
+@media(max-width:560px){
+  .wrap{padding:10px 8px 24px}
+  .hero{padding:18px;border-radius:18px}
+  .reader{border-radius:16px}
+  .readerHead{padding:11px 12px}
+  .file strong{max-width:66vw;font-size:14px}
+  .file small{font-size:10px}
+  .doc{padding:8px}
+  .controls{padding:14px 12px}
+  .now{font-size:16px}
+  .progress{margin:12px 0 14px}
+  .startbox{padding:11px}
+  .startrow{
+    display:grid;
+    grid-template-columns:1fr 58px 58px;
+  }
+  .startrow .pagepick{width:100%}
+  .row{gap:9px}
+  .field{margin-top:12px}
+  .field select,.outline select{min-height:42px}
+  .actions #startRead,.actions #stop{min-height:44px}
+  .notice{font-size:10.5px}
+}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 </head>
