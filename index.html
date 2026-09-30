@@ -100,9 +100,25 @@ startRead:$('startRead'),stop:$('stop'),notice:$('notice')
 };
 let state={pdf:null,pages:[],layoutPages:[],page:1,readStartPage:1,speaking:false,paused:false,utterance:null,voices:[],renderToken:0,fileToken:0,outline:[],zoom:1,aiAudio:null,aiRun:0,pageBlocks:[]};
 
+function deviceProfile(){
+  const p=navigator.platform||'';
+  const touch=navigator.maxTouchPoints||0;
+  if(/iPhone|iPad|iPod/i.test(p)||(/MacIntel/i.test(p)&&touch>1))return 'ios';
+  if(/Android/i.test(navigator.userAgent||''))return 'android';
+  return 'desktop';
+}
+function prefKey(name){return 'pdfvoz:'+deviceProfile()+':'+name;}
+function prefGet(name,fallback=null){
+  try{const v=localStorage.getItem(prefKey(name));return v===null?fallback:v}catch{return fallback}
+}
+function prefSet(name,value){
+  try{localStorage.setItem(prefKey(name),value)}catch{}
+}
+
+
 function toast(msg){els.notice.textContent=msg}
-function save(){if(state.pdf)localStorage.setItem('pdfvoz-progress',JSON.stringify({page:state.page,readStartPage:state.readStartPage,file:els.name.textContent}))}
-function loadSaved(){try{return JSON.parse(localStorage.getItem('pdfvoz-progress')||'null')}catch{return null}}
+function save(){if(state.pdf)prefSet('progress',JSON.stringify({page:state.page,readStartPage:state.readStartPage,file:els.name.textContent}))}
+function loadSaved(){try{return JSON.parse(prefGet('progress','null')||'null')}catch{return null}}
 function fillVoices(){state.voices=(speechSynthesis.getVoices()||[]).slice().sort((a,b)=>a.lang.localeCompare(b.lang)||a.name.localeCompare(b.name));els.voice.innerHTML='';state.voices.forEach((v,i)=>{const o=document.createElement('option');o.value=i;o.textContent=(v.lang||'')+' — '+v.name;els.voice.appendChild(o)});const pt=state.voices.findIndex(v=>/^pt(-|_)BR/i.test(v.lang));if(pt>=0)els.voice.value=pt}
 speechSynthesis.onvoiceschanged=fillVoices;fillVoices();
 
@@ -405,21 +421,21 @@ els.play.onclick=()=>{if(!state.pdf)return;if(!state.speaking){speakFromPage();r
   if(speechSynthesis.paused){speechSynthesis.resume();state.paused=false;els.play.textContent='⏸ Pausar'}else{speechSynthesis.pause();state.paused=true;els.play.textContent='▶ Continuar'}
 };
 els.stop.onclick=()=>{stopSpeech();toast('Leitura parada.')};
-els.voiceEngine.onchange=()=>{stopSpeech();const ai=els.voiceEngine.value==='transformers';els.aiVoiceField.hidden=!ai;els.systemVoiceField.hidden=ai;localStorage.setItem('pdfvoz-voiceEngine',els.voiceEngine.value)};
-const voicePrefVersion=localStorage.getItem('pdfvoz-voicePrefVersion');if(voicePrefVersion!=='2'){els.voiceEngine.value='transformers';localStorage.setItem('pdfvoz-voiceEngine','transformers');localStorage.setItem('pdfvoz-voicePrefVersion','2');}else{const savedEngine=localStorage.getItem('pdfvoz-voiceEngine');els.voiceEngine.value=(savedEngine==='system'?'system':'transformers');}els.voiceEngine.onchange();
+els.voiceEngine.onchange=()=>{stopSpeech();const ai=els.voiceEngine.value==='transformers';els.aiVoiceField.hidden=!ai;els.systemVoiceField.hidden=ai;prefSet('voiceEngine',els.voiceEngine.value)};
+const voicePrefVersion=prefGet('voicePrefVersion','2');if(voicePrefVersion!=='2'){els.voiceEngine.value='transformers';prefSet('voiceEngine','transformers');prefSet('voicePrefVersion','2');}else{const savedEngine=prefGet('voiceEngine','transformers');els.voiceEngine.value=(savedEngine==='system'?'system':'transformers');}els.voiceEngine.onchange();
 els.startRead.onclick=()=>window.speakFromPage();
 els.useCurrent.onclick=()=>{state.readStartPage=state.page;els.startPage.value=state.page;save();toast('A leitura vai começar na página '+state.page+'.')};
 els.jumpStart.onclick=()=>{const n=Math.max(1,Math.min(+els.startPage.value||1,state.pdf?.numPages||1));state.readStartPage=n;renderPage(n);toast('Ponto inicial definido na página '+n+'.')};
-els.aiVoice.onchange=()=>{supertonicVoice=els.aiVoice.value;localStorage.setItem('pdfvoz-aiVoice',supertonicVoice)};
-els.readMode.onchange=()=>{localStorage.setItem('pdfvoz-readMode',els.readMode.value)};
-const savedMode=localStorage.getItem('pdfvoz-readMode');if(savedMode&&['smart','visual','columns'].includes(savedMode))els.readMode.value=savedMode;
+els.aiVoice.onchange=()=>{supertonicVoice=els.aiVoice.value;prefSet('aiVoice',supertonicVoice)};
+els.readMode.onchange=()=>{prefSet('readMode',els.readMode.value)};
+const savedMode=prefGet('readMode');if(savedMode&&['smart','visual','columns'].includes(savedMode))els.readMode.value=savedMode;
 els.outline.onchange=async()=>{const idx=+els.outline.value;if(!Number.isFinite(idx)||!state.outline[idx])return;const p=await destinationToPage(state.outline[idx].dest);if(p){state.readStartPage=p;els.startPage.value=p;await renderPage(p);toast('Ponto inicial: página '+p+'.') }else toast('Esse marcador não informa uma página que o navegador consiga localizar.')};
 els.rewind.onclick=()=>renderPage(state.page-1);els.forward.onclick=()=>renderPage(state.page+1);
 els.speed.oninput=()=>els.speedV.textContent=Number(els.speed.value).toFixed(2).replace('.',',')+'×';
 els.font.oninput=()=>{els.fontV.textContent=els.font.value+'px';els.text.style.fontSize=els.font.value+'px'};
 els.line.oninput=()=>{els.lineV.textContent=Number(els.line.value).toFixed(2).replace('.',',');els.text.style.lineHeight=els.line.value};
-els.theme.onclick=()=>{document.documentElement.classList.toggle('light');els.theme.textContent=document.documentElement.classList.contains('light')?'☀':'☾';localStorage.setItem('pdfvoz-theme',document.documentElement.classList.contains('light')?'light':'dark')};
-if(localStorage.getItem('pdfvoz-theme')==='light'){document.documentElement.classList.add('light');els.theme.textContent='☀'}
+els.theme.onclick=()=>{document.documentElement.classList.toggle('light');els.theme.textContent=document.documentElement.classList.contains('light')?'☀':'☾';prefSet('theme',document.documentElement.classList.contains('light')?'light':'dark')};
+if(prefGet('theme')==='light'){document.documentElement.classList.add('light');els.theme.textContent='☀'}
 let resizeTimer=null;window.addEventListener('resize',()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},180)});
 window.addEventListener('orientationchange',()=>setTimeout(()=>{if(state.pdf&&!els.stage.hidden)renderPage(state.page)},350));
 window.addEventListener('beforeunload',save);
