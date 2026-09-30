@@ -620,15 +620,6 @@ els.play.onclick=function(){
 };
 if(els.stop)els.stop.onclick=function(){stop();toast("Leitura parada.");};
 if(els.startRead)els.startRead.onclick=function(){window.speakFromPage();};
-els.play.onclick=function(){
-  if(!state.pdf)return;
-  if(!state.speaking){window.speakFromPage();return;}
-  try{
-    if(state.paused){speechSynthesis.resume();state.paused=false;els.play.textContent="⏸ Pausar";}
-    else{speechSynthesis.pause();state.paused=true;els.play.textContent="▶ Continuar";}
-  }catch(e){}
-};
-if(els.stop)els.stop.onclick=function(){stop();toast("Leitura parada.");};
-if(els.startRead)els.startRead.onclick=function(){window.speakFromPage();};
+
 
 })();
