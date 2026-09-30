@@ -113,10 +113,17 @@ function pageText(p){
     kept.push(l.text);
   });
   
+  var footerKeys=Object.create(null);
+  lines.forEach(function(l){
+    var bottomZone=(l.y-bottom)<span*.10;
+    if(isFooter(l.text)||bottomZone)footerKeys[key(l.text)]=true;
+  });
+  base=base.filter(function(s){return !footerKeys[key(s)];});
   var text=base.length?base.join(" "):kept.join(" ");
   text=text.replace(/\b\d+\s+de\s+\d+\b/gi," ");
   text=text.replace(/\bgran\.com\.br\b/gi," ");
   text=text.replace(/(?:https?:\/\/|www\.)\S+/gi," ");
+  text=text.replace(/(?:o conteúdo deste livro eletrônico|todos os direitos reservados)[^.!?]*(?:[.!?]|$)/gi," ");
   return duplicateClean(repairWords(text));
 }
 
